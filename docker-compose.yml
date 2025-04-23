@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis/redis-stack-server:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: always
+    networks:
+      - bridge
+
+  geoserver:
+    image: kartoza/geoserver
+    container_name: geoserver
+    ports:
+      - "8080:8080"
+    environment:
+      - GEOSERVER_ADMIN_PASSWORD=admin
+    restart: always
+    networks:
+      - bridge
+      
+networks:
+  bridge:
+    driver: bridge

@@ -1,0 +1,61 @@
+{
+  "name": "fastify-api",
+  "version": "1.0.0",
+  "description": "This project with Fastify.",
+  "main": "server.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "mocha",
+    "format": "prettier --write \"./**/*.{js,jsx,json}\"",
+    "start": "fastify start -l info ./src/server.js --env-file .env",
+    "dev": "bun run format && bun run --watch ./src/server.js --env-file .env",
+    "build": "babel ./src/server.js --out-file ./dist/server.js"
+  },
+  "keywords": [],
+  "author": "Nguyen Vo Yen Linh",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/cookie": "^9.3.1",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/env": "^4.4.0",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/swagger": "^8.14.0",
+    "@fastify/swagger-ui": "^3.0.0",
+    "axios": "^1.7.7",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.4.5",
+    "escape-html": "^1.0.3",
+    "fastify": "^4.26.2",
+    "fastify-multer": "^2.0.3",
+    "firebase": "^10.13.2",
+    "firebase-admin": "^12.5.0",
+    "fs": "^0.0.1-security",
+    "googleapis": "^144.0.0",
+    "http": "^0.0.1-security",
+    "jsonwebtoken": "^9.0.2",
+    "mime-types": "^2.1.35",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.16",
+    "nodemon": "^3.1.7",
+    "ogr2ogr": "^6.0.0",
+    "path": "^0.12.7",
+    "pg": "^8.13.0",
+    "pino-pretty": "^11.2.2",
+    "postgres": "^3.4.5",
+    "prettier": "^3.3.3",
+    "redis": "^4.7.0",
+    "uuid": "^9.0.1",
+    "winston": "^3.14.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.25.6",
+    "@babel/core": "^7.25.2",
+    "@babel/preset-env": "^7.25.4",
+    "mocha": "^10.7.3",
+    "webpack": "^5.94.0",
+    "webpack-cli": "^5.1.4"
+  }
+}

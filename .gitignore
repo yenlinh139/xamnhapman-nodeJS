@@ -1,0 +1,8 @@
+node_modules
+/dist
+.vercel
+/logs
+uploads
+.env
+
+jiraclone-a750e-firebase-adminsdk-lghhc-03012998cc.json
