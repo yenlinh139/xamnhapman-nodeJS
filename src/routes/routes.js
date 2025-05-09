@@ -11,12 +11,9 @@ const VerifyToken = require("../middlewares/verifyToken");
 const GetFeedback = require("../controllers/feedback/getFeedback.controller");
 const CreateFeedback = require("../controllers/feedback/postFeedback.controller");
 const ChangeFeedback = require("../controllers/feedback/putFeedback.controller");
-const {
-  GetSalinityPoints,
-  GetSalinityData,
-  ExportSalinityDataToExcel,
-  ExportSalinityToGeoJSON,
-} = require("../controllers/salinity/getSalinity.controller");
+const {GetSalinityPoints, GetSalinityData, ExportSalinityDataToExcel} = require("../controllers/salinity/getSalinity.controller");
+const {GetSearchAll} = require("../controllers/search/getSearch.controller");
+const {GetHydrometeorology} = require("../controllers/hydrometeorology/hydrometeorology.controller");
 
 const router = (router, opts, next) => {
   router.get("/", async (req, res) => {
@@ -50,7 +47,12 @@ const router = (router, opts, next) => {
   router.get("/salinity-points", GetSalinityPoints);
   router.get("/salinity-data/:kihieu", GetSalinityData);
   router.get("/salinity-export/:kihieu", ExportSalinityDataToExcel);
-  router.get("/salinity-export-gis/:kihieu", ExportSalinityToGeoJSON);
+
+  //search
+  router.get("/search/:id", GetSearchAll);
+
+  //salinity
+  router.get("/hydrometeorology-station", GetHydrometeorology);
 
   next();
 };

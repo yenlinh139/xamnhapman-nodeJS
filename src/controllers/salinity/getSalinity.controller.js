@@ -16,17 +16,18 @@ const GetSalinityPoints = async (req, reply) => {
   }
 };
 
+const idMapping = {
+  CauRachTra: "CRT",
+  CauThuThiem: "CTT",
+  CauOngThin: "COT",
+  CongKenhC: "CKC",
+  "KenhXang-AnHa": "KXAH",
+  MuiNhaBe: "MNB",
+  PhaCatLai: "PCL",
+};
+
 // GET /api/salinity-table?year=2007
 const GetSalinityData = async (req, reply) => {
-  const idMapping = {
-    CauRachTra: "CRT",
-    CauThuThiem: "CTT",
-    CauOngThin: "COT",
-    CongKenhC: "CKC",
-    "KenhXang-AnHa": "KXAH",
-    MuiNhaBe: "MNB",
-    PhaCatLai: "PCL",
-  };
   const allowedColumns = Object.values(idMapping);
 
   try {
@@ -66,15 +67,6 @@ const GetSalinityData = async (req, reply) => {
 };
 
 const ExportSalinityDataToExcel = async (req, reply) => {
-  const idMapping = {
-    CauRachTra: "CRT",
-    CauThuThiem: "CTT",
-    CauOngThin: "COT",
-    CongKenhC: "CKC",
-    "KenhXang-AnHa": "KXAH",
-    MuiNhaBe: "MNB",
-    PhaCatLai: "PCL",
-  };
   const allowedColumns = Object.values(idMapping);
 
   try {
@@ -119,71 +111,8 @@ const ExportSalinityDataToExcel = async (req, reply) => {
   }
 };
 
-const ExportSalinityToGeoJSON = async (req, reply) => {
-  const idMapping = {
-    CauRachTra: "CRT",
-    CauThuThiem: "CTT",
-    CauOngThin: "COT",
-    CongKenhC: "CKC",
-    "KenhXang-AnHa": "KXAH",
-    MuiNhaBe: "MNB",
-    PhaCatLai: "PCL",
-  };
-
-  try {
-    const {kihieu} = req.params;
-    const code = idMapping[kihieu];
-
-    if (!code) return reply.code(400).send({message: "Ký hiệu không hợp lệ"});
-
-    const pointsQuery = `
-      SELECT * FROM hochiminh."DiemDoMan"
-      WHERE "KiHieu" = $1
-    `;
-    const valueQuery = `
-      SELECT "Ngày", "${code}" AS "DoMan"
-      FROM hochiminh."DoMan"
-      WHERE "${code}" IS NOT NULL
-    `;
-
-    const [pointRes, valueRes] = await Promise.all([QueryDatabase(pointsQuery, [kihieu]), QueryDatabase(valueQuery)]);
-
-    const point = pointRes.rows[0];
-    const lat = parseFloat(point.ViDoDecimal);
-    const lon = parseFloat(point.KinhDoDecimal);
-
-    const features = valueRes.rows.map((item) => ({
-      type: "Feature",
-      geometry: {
-        type: "Point",
-        coordinates: [lon, lat],
-      },
-      properties: {
-        Ngay: item.Ngày,
-        DoMan: item.DoMan,
-        TenDiem: point.TenDiem,
-        KiHieu: point.KiHieu,
-      },
-    }));
-
-    const geojson = {
-      type: "FeatureCollection",
-      features,
-    };
-
-    reply
-      .header("Content-Disposition", `attachment; filename=DoMan_${kihieu}.geojson`)
-      .type("application/geo+json")
-      .send(geojson);
-  } catch (error) {
-    logger.error(error);
-    reply.code(500).send({message: "Lỗi khi xuất GeoJSON"});
-  }
-};
-
 module.exports = {
   GetSalinityPoints,
   GetSalinityData,
   ExportSalinityDataToExcel,
-  ExportSalinityToGeoJSON,
 };
