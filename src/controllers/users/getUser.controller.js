@@ -26,7 +26,7 @@ const GetUserById = async (req, res, next) => {
   try {
     const id = escape(req.params.id);
     const sql = `
-      SELECT * FROM "users" WHERE id = '${id}'
+      SELECT * FROM "users" WHERE email = '${id}'
     `;
 
     const data = await QueryDatabase(sql);

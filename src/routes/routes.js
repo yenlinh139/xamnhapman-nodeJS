@@ -12,8 +12,14 @@ const GetFeedback = require("../controllers/feedback/getFeedback.controller");
 const CreateFeedback = require("../controllers/feedback/postFeedback.controller");
 const ChangeFeedback = require("../controllers/feedback/putFeedback.controller");
 const {GetSalinityPoints, GetSalinityData, ExportSalinityDataToExcel} = require("../controllers/salinity/getSalinity.controller");
-const {GetSearchAll} = require("../controllers/search/getSearch.controller");
-const {GetHydrometeorology} = require("../controllers/hydrometeorology/hydrometeorology.controller");
+const {
+  GetSearchAll,
+  GetAllDistricts,
+  GetSearchDate,
+  GetStationPositionSalinity,
+  GetStationPositionHydrometeorology,
+} = require("../controllers/search/getSearch.controller");
+const {GetHydrometeorology, GetHydrometeorologyData} = require("../controllers/hydrometeorology/hydrometeorology.controller");
 
 const router = (router, opts, next) => {
   router.get("/", async (req, res) => {
@@ -50,9 +56,14 @@ const router = (router, opts, next) => {
 
   //search
   router.get("/search/:id", GetSearchAll);
+  router.get("/districts", GetAllDistricts);
+  router.get("/search-date/:id", GetSearchDate);
+  router.get("/station-position-salinity/:code", GetStationPositionSalinity);
+  router.get("/station-position-hydrometeorology/:code", GetStationPositionHydrometeorology);
 
-  //salinity
+  //hydrometeorology
   router.get("/hydrometeorology-station", GetHydrometeorology);
+  router.get("/hydrometeorology-data/:kihieu", GetHydrometeorologyData);
 
   next();
 };
