@@ -13,6 +13,13 @@ const CreateFeedback = require("../controllers/feedback/postFeedback.controller"
 const ChangeFeedback = require("../controllers/feedback/putFeedback.controller");
 const {GetSalinityPoints, GetSalinityData, ExportSalinityDataToExcel} = require("../controllers/salinity/getSalinity.controller");
 const {
+  CreateSalinityData,
+  GetAllSalinityData,
+  UpdateSalinityData,
+  DeleteSalinityData,
+  DeleteSalinityDataRange,
+} = require("../controllers/salinity/salinityData.controller");
+const {
   GetSearchAll,
   GetAllDistricts,
   GetSearchDate,
@@ -53,6 +60,13 @@ const router = (router, opts, next) => {
   router.get("/salinity-points", GetSalinityPoints);
   router.get("/salinity-data/:kihieu", GetSalinityData);
   router.get("/salinity-export/:kihieu", ExportSalinityDataToExcel);
+
+  // SalinityData CRUD
+  router.post("/salinity-data", {onRequest: [VerifyToken]}, CreateSalinityData);
+  router.get("/salinity-data", GetAllSalinityData);
+  router.put("/salinity-data/:date", {onRequest: [VerifyToken]}, UpdateSalinityData);
+  router.delete("/salinity-data/:date", {onRequest: [VerifyToken]}, DeleteSalinityData);
+  router.delete("/salinity-data-range", {onRequest: [VerifyToken]}, DeleteSalinityDataRange);
 
   //search
   router.get("/search/:id", GetSearchAll);

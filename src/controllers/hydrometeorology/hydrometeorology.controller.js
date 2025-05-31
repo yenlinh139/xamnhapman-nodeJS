@@ -18,23 +18,23 @@ const GetHydrometeorology = async (req, reply) => {
 
 const idMapping = {
   // Khí tượng
-  AP: { table: "KhiTuong", columns: ["R_AP"] },
-  BC: { table: "KhiTuong", columns: ["R_BC"] },
-  CG: { table: "KhiTuong", columns: ["R_CG"] },
-  CL: { table: "KhiTuong", columns: ["R_CL"] },
-  CC: { table: "KhiTuong", columns: ["R_CC"] },
-  HM: { table: "KhiTuong", columns: ["R_HM"] },
-  LMX: { table: "KhiTuong", columns: ["R_LMX"] },
-  LS: { table: "KhiTuong", columns: ["R_LS"] },
-  MDC: { table: "KhiTuong", columns: ["R_MDC"] },
-  NB_KT: { table: "KhiTuong", columns: ["R_NB"] },
-  PVC: { table: "KhiTuong", columns: ["R_PVC"] },
-  TTH: { table: "KhiTuong", columns: ["R_TTH"] },
-  TD: { table: "KhiTuong", columns: ["R_TD"] },
-  TSH: { table: "KhiTuong", columns: ["R_TSH", "Ttb_TSH", "Tx_TSH", "Tm_TSH"] },
+  AP: {table: "KhiTuong", columns: ["R_AP"]},
+  BC: {table: "KhiTuong", columns: ["R_BC"]},
+  CG: {table: "KhiTuong", columns: ["R_CG"]},
+  CL: {table: "KhiTuong", columns: ["R_CL"]},
+  CC: {table: "KhiTuong", columns: ["R_CC"]},
+  HM: {table: "KhiTuong", columns: ["R_HM"]},
+  LMX: {table: "KhiTuong", columns: ["R_LMX"]},
+  LS: {table: "KhiTuong", columns: ["R_LS"]},
+  MDC: {table: "KhiTuong", columns: ["R_MDC"]},
+  NB_KT: {table: "KhiTuong", columns: ["R_NB"]},
+  PVC: {table: "KhiTuong", columns: ["R_PVC"]},
+  TTH: {table: "KhiTuong", columns: ["R_TTH"]},
+  TD: {table: "KhiTuong", columns: ["R_TD"]},
+  TSH: {table: "KhiTuong", columns: ["R_TSH", "Ttb_TSH", "Tx_TSH", "Tm_TSH"]},
   // Thủy văn
-  NB_TV: { table: "ThuyVan", columns: ["Htb_NB", "Hx_NB", "Hm_NB"] },
-  PA: { table: "ThuyVan", columns: ["Htb_PA", "Hx_PA", "Hm_PA"] },
+  NB_TV: {table: "ThuyVan", columns: ["Htb_NB", "Hx_NB", "Hm_NB"]},
+  PA: {table: "ThuyVan", columns: ["Htb_PA", "Hx_PA", "Hm_PA"]},
 };
 
 const GetHydrometeorologyData = async (req, reply) => {
@@ -66,11 +66,11 @@ const GetHydrometeorologyData = async (req, reply) => {
         return reply.code(400).send({code: 400, message: "Điểm đo không hợp lệ"});
       }
 
-      const { table, columns } = idMapping[kihieu];
+      const {table, columns} = idMapping[kihieu];
 
-      const selectColumns = columns.map(col => `"${col}"`).join(", ");
- 
-      const whereConditions = columns.map(col => `"${col}" IS NOT NULL`).join(" OR ");
+      const selectColumns = columns.map((col) => `"${col}"`).join(", ");
+
+      const whereConditions = columns.map((col) => `"${col}" IS NOT NULL`).join(" OR ");
 
       query = `
         SELECT "Ngày", ${selectColumns}
