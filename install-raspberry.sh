@@ -43,11 +43,16 @@ print_status "Hệ thống đã được cập nhật"
 
 # Cài đặt các dependencies cơ bản
 print_info "Cài đặt dependencies cơ bản..."
-sudo apt install -y curl wget git vim htop
+sudo apt install -y curl wget git vim htop build-essential python3-pip
+
+# Kiểm tra architecture
+ARCH=$(uname -m)
+print_info "Raspberry Pi Architecture: $ARCH"
 
 # Cài đặt Node.js
 print_info "Cài đặt Node.js 18..."
 if ! command -v node &> /dev/null; then
+    # Sử dụng NodeSource repository cho ARM
     curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
     sudo apt-get install -y nodejs
     print_status "Node.js đã được cài đặt: $(node --version)"
