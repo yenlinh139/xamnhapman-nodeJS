@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis/redis-stack-server:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: always
+    # Raspberry Pi optimizations
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    networks:
+      - bridge
+
+  geoserver:
+    image: kartoza/geoserver
+    container_name: geoserver
+    ports:
+      - "8080:8080"
+    environment:
+      - GEOSERVER_ADMIN_PASSWORD=admin
+      # Raspberry Pi Java optimizations
+      - INITIAL_MEMORY=256M
+      - MAXIMUM_MEMORY=512M
+    restart: always
+    # Raspberry Pi optimizations
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 256M
+    volumes:
+      - geoserver_data:/opt/geoserver/data_dir
+    networks:
+      - bridge
+
+volumes:
+  geoserver_data:
+
+
+networks:
+  bridge:
+    driver: bridge
