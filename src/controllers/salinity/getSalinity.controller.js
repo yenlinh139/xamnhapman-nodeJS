@@ -111,8 +111,120 @@ const ExportSalinityDataToExcel = async (req, reply) => {
   }
 };
 
+const ExportSalinityDataWithRange = async (req, reply) => {
+  const allowedColumns = Object.values(idMapping);
+
+  try {
+    const {kiHieu, tenDiem, startDate, endDate, data} = req.body;
+
+    if (!kiHieu || !startDate || !endDate) {
+      return reply.code(400).send({
+        code: 400,
+        message: "Thiếu thông tin: kiHieu, startDate, endDate",
+      });
+    }
+
+    // Validate kiHieu
+    const column = idMapping[kiHieu];
+    if (!allowedColumns.includes(column)) {
+      return reply.code(400).send({
+        code: 400,
+        message: "Điểm đo không hợp lệ",
+      });
+    }
+
+    let exportData = [];
+
+    // Nếu frontend gửi data sẵn, sử dụng data đó
+    if (data && data.length > 0) {
+      exportData = data;
+    } else {
+      // Nếu không có data, query từ database với range
+      const query = `
+        SELECT "Ngày", "${column}" AS "DoMan"
+        FROM hochiminh."DoMan"
+        WHERE "${column}" IS NOT NULL
+          AND "Ngày" >= $1
+          AND "Ngày" <= $2
+        ORDER BY "Ngày" ASC
+      `;
+
+      const result = await QueryDatabase(query, [startDate, endDate]);
+      exportData = result.rows;
+    }
+
+    if (exportData.length === 0) {
+      return reply.code(404).send({
+        code: 404,
+        message: "Không có dữ liệu trong khoảng thời gian được chọn",
+      });
+    }
+
+    // Format data cho Excel
+    const formatted = exportData.map((row, index) => {
+      const date = row.Ngày || row.ngay || row.date;
+      const salinity = row.DoMan || row.doman || row.salinity;
+
+      return {
+        STT: index + 1,
+        Ngày: date ? new Date(date).toLocaleDateString("vi-VN") : "",
+        "Độ mặn (‰)": salinity || "",
+        "Điểm đo": tenDiem || kiHieu || "",
+      };
+    });
+
+    // Tạo Excel file
+    const worksheet = XLSX.utils.json_to_sheet(formatted);
+
+    // Set column widths
+    worksheet["!cols"] = [
+      {wch: 5}, // STT
+      {wch: 12}, // Ngày
+      {wch: 15}, // Độ mặn
+      {wch: 20}, // Điểm đo
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Dữ liệu độ mặn");
+
+    // Add metadata sheet
+    const metaData = [
+      ["Thông tin xuất dữ liệu"],
+      ["Điểm đo:", tenDiem || kiHieu],
+      ["Ký hiệu:", kiHieu],
+      ["Từ ngày:", startDate],
+      ["Đến ngày:", endDate],
+      ["Tổng số bản ghi:", formatted.length],
+      ["Thời gian xuất:", new Date().toLocaleString("vi-VN")],
+    ];
+
+    const metaWorksheet = XLSX.utils.aoa_to_sheet(metaData);
+    metaWorksheet["!cols"] = [{wch: 20}, {wch: 30}];
+    XLSX.utils.book_append_sheet(workbook, metaWorksheet, "Thông tin");
+
+    const buffer = XLSX.write(workbook, {bookType: "xlsx", type: "buffer"});
+
+    // Tạo filename
+    const fileName = `DoMan_${tenDiem || kiHieu}_${startDate}_${endDate}.xlsx`;
+
+    reply
+      .header("Content-Disposition", `attachment; filename=${encodeURIComponent(fileName)}`)
+      .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .send(buffer);
+
+    logger.info(`Xuất Excel thành công: ${fileName}`);
+  } catch (error) {
+    logger.error("Lỗi xuất Excel:", error);
+    return reply.code(500).send({
+      code: 500,
+      message: "Lỗi máy chủ khi xuất Excel",
+    });
+  }
+};
+
 module.exports = {
   GetSalinityPoints,
   GetSalinityData,
   ExportSalinityDataToExcel,
+  ExportSalinityDataWithRange,
 };

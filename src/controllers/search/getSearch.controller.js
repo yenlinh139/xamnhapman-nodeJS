@@ -112,8 +112,8 @@ const GetSearchDate = async (req, reply) => {
 
     const escapedDate = id.replace(/'/g, "''"); // tránh SQL injection
     const tables = [
-      {name: "ThuyVan", label: "hydrologyData", format: "iso"},
-      {name: "DoMan", label: "salinityData", format: "vn"},
+      {name: "DoMan", label: "salinityData", format: "iso"},
+      {name: "ThuyVan", label: "hydrologyData", format: "vn"},
       {name: "KhiTuong", label: "meteorologyData", format: "vn"},
     ];
 

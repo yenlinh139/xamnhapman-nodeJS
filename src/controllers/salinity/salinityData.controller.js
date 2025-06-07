@@ -279,7 +279,6 @@ const DeleteSalinityDataRange = async (req, reply) => {
   }
 };
 
-
 module.exports = {
   CreateSalinityData,
   GetAllSalinityData,
