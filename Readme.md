@@ -54,13 +54,6 @@ npm start      # Production
 docker compose up -d  # Redis + GeoServer
 ```
 
-## 🍓 Deploy Raspberry Pi
-
-```bash
-chmod +x install-raspberry.sh
-./install-raspberry.sh
-```
-
 ## ⚙️ Config .env
 
 ```env
