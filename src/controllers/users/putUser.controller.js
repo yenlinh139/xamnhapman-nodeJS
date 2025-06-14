@@ -12,7 +12,6 @@ const PutUser = async (req, res, next) => {
     const name = escape(req.body.name);
     const email = escape(req.body.email);
     const phone = escape(req.body.phone);
-    const birthday = escape(req.body.birthday);
     const password = escape(req.body.password);
 
     if (!name) {
@@ -26,15 +25,11 @@ const PutUser = async (req, res, next) => {
       res.status(404);
       return {code: 404, message: "Email not found"};
     }
-    if (checkEmail.rows[0].email == "admin@gmail.com") {
-      res.status(401);
-      return {code: 401, message: "Can not change information administrator"};
-    }
 
     if (!password || req.body.password == undefined) {
       const sql = `
         UPDATE users 
-        SET name = '${name}', phone = '${phone}', birthday = '${birthday}'
+        SET name = '${name}', phone = '${phone}'
         WHERE email = '${email}' 
       `;
       await QueryDatabase(sql);
@@ -43,7 +38,7 @@ const PutUser = async (req, res, next) => {
       const hashedPassword = await hashPassword(password);
       const sql = `
         UPDATE users 
-        SET password = '${hashedPassword}', name = '${name}', phone = '${phone}', birthday = '${birthday}'
+        SET password = '${hashedPassword}', name = '${name}', phone = '${phone}'
         WHERE email = '${email}' 
       `;
       await QueryDatabase(sql);

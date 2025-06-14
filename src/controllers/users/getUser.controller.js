@@ -5,7 +5,13 @@ const logger = require("../../loggers/loggers.config");
 const GetUser = async (req, res, next) => {
   try {
     const sql = `
-      SELECT * FROM "users";
+      SELECT 
+        u.*,
+        f.name as feedback_name,
+        f.message as feedback_message,
+        f.rating as feedback_rating
+      FROM "users" u
+      LEFT JOIN "feedbacks" f ON u.email = f.email;
     `;
 
     const data = await QueryDatabase(sql);

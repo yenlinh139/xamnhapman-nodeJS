@@ -223,8 +223,9 @@ const Login = async (req, res) => {
     const foundUser = user.rows[0];
 
     // Kiểm tra xem email đã được xác thực chưa
-    if (foundUser.email_verified === "false") {
-      return res.status(403).send({code: 403, message: "Please verify your email before logging in"});
+    if (!foundUser.email_verified || foundUser.email_verified === false) {
+      res.status(403);
+      return {code: 403, message: "Please verify your email before logging in"};
     }
 
     // Kiểm tra mật khẩu
