@@ -13,10 +13,9 @@ const CreateUser = async (req, res, next) => {
     const name = escape(req.body.name);
     const password = escape(req.body.password);
     const phone = escape(req.body.phone);
-    const birthday = escape(req.body.birthday);
     const role = escape(req.body.role);
 
-    if (!email || !name || !password || !phone || !birthday) {
+    if (!email || !name || !password || !phone) {
       res.status(400);
       return {code: 400, message: "Missing required fields"};
     }
@@ -36,8 +35,8 @@ const CreateUser = async (req, res, next) => {
     const hashedPassword = await hashPassword(password);
 
     const sql = `
-      INSERT INTO "users" (name, email, password , role, phone, birthday) 
-      VALUES ('${name}', '${email}', '${hashedPassword}','0', '${phone}', '${birthday}');
+      INSERT INTO "users" (name, email, password , role, phone) 
+      VALUES ('${name}', '${email}', '${hashedPassword}','0', '${phone}');
     `;
 
     await QueryDatabase(sql);

@@ -12,6 +12,12 @@ const GetFeedback = require("../controllers/feedback/getFeedback.controller");
 const CreateFeedback = require("../controllers/feedback/postFeedback.controller");
 const ChangeFeedback = require("../controllers/feedback/putFeedback.controller");
 const {
+  GetFeedbackStats,
+  GetFeedbackStatsByTime,
+  GetRecentFeedbacks,
+  GetDetailedRatingStats,
+} = require("../controllers/feedback/feedbackStats.controller");
+const {
   GetSalinityPoints,
   GetSalinityData,
   ExportSalinityDataToExcel,
@@ -24,6 +30,7 @@ const {
   DeleteSalinityData,
   DeleteSalinityDataRange,
 } = require("../controllers/salinity/salinityData.controller");
+const {GetDailySalinityReportData, GenerateDailySalinityPDF} = require("../controllers/salinity/salinityReport.controller");
 const {
   GetSearchAll,
   GetAllDistricts,
@@ -58,8 +65,14 @@ const router = (router, opts, next) => {
 
   //Feedback
   router.post("/feedback", CreateFeedback);
-  router.get("/feedback", GetFeedback);
-  router.put("/feedback", ChangeFeedback);
+  router.get("/feedback/:email", GetFeedback);
+  router.put("/feedback/:email", ChangeFeedback);
+
+  // Feedback Statistics - Public endpoints for building trust
+  router.get("/feedback/stats", GetFeedbackStats);
+  router.get("/feedback/stats/time", GetFeedbackStatsByTime);
+  router.get("/feedback/recent", GetRecentFeedbacks);
+  router.get("/feedback/stats/rating", GetDetailedRatingStats);
 
   //salinity
   router.get("/salinity-points", GetSalinityPoints);
@@ -73,6 +86,10 @@ const router = (router, opts, next) => {
   router.put("/salinity-data/:date", {onRequest: [VerifyToken]}, UpdateSalinityData);
   router.delete("/salinity-data/:date", {onRequest: [VerifyToken]}, DeleteSalinityData);
   router.delete("/salinity-data-range", {onRequest: [VerifyToken]}, DeleteSalinityDataRange);
+
+  // Salinity Reports
+  router.get("/salinity-report/:date", GetDailySalinityReportData);
+  router.get("/salinity-report-pdf/:date", GenerateDailySalinityPDF);
 
   //search
   router.get("/search/:id", GetSearchAll);
