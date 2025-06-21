@@ -1,7 +1,4 @@
-const {upload} = require("../configs/uploadImage");
 const {Login, RefreshToken, SignUp, verifyEmail} = require("../controllers/auth/auth.controller");
-const {CreateFarmBoundary} = require("../controllers/maps/createMapRegion.controller");
-const {GetMapRegions} = require("../controllers/maps/getMapRegions.controller");
 const ChangeRoleUser = require("../controllers/users/changeRoleUser.controller");
 const CreateUser = require("../controllers/users/createUser.controller");
 const DeleteUser = require("../controllers/users/deleteUser.controller");
@@ -30,7 +27,7 @@ const {
   DeleteSalinityData,
   DeleteSalinityDataRange,
 } = require("../controllers/salinity/salinityData.controller");
-const {GetDailySalinityReportData, GenerateDailySalinityPDF} = require("../controllers/salinity/salinityReport.controller");
+const {GetDailySalinityReportData, ExportSalinityReportPDF} = require("../controllers/salinity/salinityReport.controller");
 const {
   GetSearchAll,
   GetAllDistricts,
@@ -39,6 +36,12 @@ const {
   GetStationPositionHydrometeorology,
 } = require("../controllers/search/getSearch.controller");
 const {GetHydrometeorology, GetHydrometeorologyData} = require("../controllers/hydrometeorology/hydrometeorology.controller");
+const {
+  LogReportDownload,
+  GetReportHistory,
+  GetReportStatistics,
+  DeleteReportLog,
+} = require("../controllers/salinity/reportHistory.controller");
 
 const router = (router, opts, next) => {
   router.get("/", async (req, res) => {
@@ -58,10 +61,6 @@ const router = (router, opts, next) => {
   router.delete("/user", {onRequest: [VerifyToken]}, DeleteUser);
   router.put("/user", {onRequest: [VerifyToken]}, PutUser);
   router.put("/user/changerole", {onRequest: [VerifyToken]}, ChangeRoleUser);
-
-  // Map Region
-  router.get("/map", {onRequest: [VerifyToken]}, GetMapRegions);
-  router.post("/map/farmBoundary", {onRequest: [VerifyToken]}, CreateFarmBoundary);
 
   //Feedback
   router.post("/feedback", CreateFeedback);
@@ -89,13 +88,17 @@ const router = (router, opts, next) => {
 
   // Salinity Reports
   router.get("/salinity-report/:date", GetDailySalinityReportData);
-  router.get("/salinity-report-pdf/:date", GenerateDailySalinityPDF);
+  router.get("/salinity-report/:date/export-pdf", {onRequest: [VerifyToken]}, ExportSalinityReportPDF);
+  router.post("/log-download", {onRequest: [VerifyToken]}, LogReportDownload);
+  router.get("/history", {onRequest: [VerifyToken]}, GetReportHistory);
+  router.get("/statistics", {onRequest: [VerifyToken]}, GetReportStatistics);
+  router.delete("/history/:id", {onRequest: [VerifyToken]}, DeleteReportLog);
 
   //search
   router.get("/search/:id", GetSearchAll);
   router.get("/districts", GetAllDistricts);
   router.get("/search-date/:id", GetSearchDate);
-  router.get("/station-position-salinity/:code", GetStationPositionSalinity);
+  router.get("/station-position-salinity/:kihieu", GetStationPositionSalinity);
   router.get("/station-position-hydrometeorology/:code", GetStationPositionHydrometeorology);
 
   //hydrometeorology

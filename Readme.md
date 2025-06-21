@@ -41,7 +41,7 @@ npm start      # Production
 - `GET /api/salinity-table/:kihieu` - Dữ liệu theo điểm
 - `POST /api/salinity-export` - Xuất Excel
 
-**7 điểm đo**: CauRachTra, CauThuThiem, CauOngThin, CongKenhC, KenhXang-AnHa, MuiNhaBe, PhaCatLai
+**8 điểm đo**: CRT (Cầu Rạch Tra), CTT (Cầu Thủ Thiêm), COT (Cầu Ông Thìn), CKC (Cống Kênh C), KXAH (Kênh Xáng đứng 1), MNB (Mũi Nhà Bè), PCL (Phà Cát Lái), KXD2 (Kênh Xáng đứng 2)
 
 ### Khác
 - `GET /api/user` - Quản lý user
