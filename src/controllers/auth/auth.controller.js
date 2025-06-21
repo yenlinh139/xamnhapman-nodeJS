@@ -116,7 +116,7 @@ const SignUp = async (req, res) => {
           .verify-button {
             display: inline-block;
             background-color: #2a9d8f;
-            color: #fff;
+            color: #fff !important;
             padding: 12px 30px;
             text-decoration: none;
             font-size: 18px;

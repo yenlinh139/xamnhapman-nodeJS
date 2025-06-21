@@ -5,7 +5,7 @@ const logger = require("../../loggers/loggers.config");
 // CREATE - Thêm dữ liệu độ mặn mới
 const CreateSalinityData = async (req, reply) => {
   try {
-    const {Ngày, CRT, CTT, COT, CKC, KXAH, MNB, PCL} = req.body;
+    const {Ngày, CRT, CTT, COT, CKC, KXAH, MNB, PCL, KXD2} = req.body;
 
     if (!Ngày) {
       return reply.code(400).send({code: 400, message: "Ngày là bắt buộc"});
@@ -20,6 +20,7 @@ const CreateSalinityData = async (req, reply) => {
     const escapedKXAH = KXAH ? escape(KXAH.toString()) : null;
     const escapedMNB = MNB ? escape(MNB.toString()) : null;
     const escapedPCL = PCL ? escape(PCL.toString()) : null;
+    const escapedKXD2 = KXD2 ? escape(KXD2.toString()) : null;
 
     // Kiểm tra xem dữ liệu cho ngày này đã tồn tại chưa
     const checkExist = await QueryDatabase(`
@@ -63,6 +64,10 @@ const CreateSalinityData = async (req, reply) => {
       columns.push(`"PCL"`);
       values.push(`${escapedPCL}`);
     }
+    if (escapedKXD2 !== null) {
+      columns.push(`"KXD2"`);
+      values.push(`${escapedKXD2}`);
+    }
 
     const insertQuery = `
       INSERT INTO hochiminh."DoMan" (${columns.join(", ")})
@@ -102,7 +107,7 @@ const GetAllSalinityData = async (req, reply) => {
     }
 
     const query = `
-      SELECT "Ngày", "CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL"
+      SELECT "Ngày", "CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2"
       FROM hochiminh."DoMan"
       ${whereCondition}
       ORDER BY "Ngày" DESC
@@ -142,7 +147,7 @@ const GetAllSalinityData = async (req, reply) => {
 const UpdateSalinityData = async (req, reply) => {
   try {
     const {date} = req.params;
-    const {CRT, CTT, COT, CKC, KXAH, MNB, PCL} = req.body;
+    const {CRT, CTT, COT, CKC, KXAH, MNB, PCL, KXD2} = req.body;
 
     if (!date) {
       return reply.code(400).send({code: 400, message: "Ngày là bắt buộc"});
@@ -170,6 +175,7 @@ const UpdateSalinityData = async (req, reply) => {
     if (KXAH !== undefined) updateFields.push(`"KXAH" = ${KXAH !== null ? escape(KXAH.toString()) : "NULL"}`);
     if (MNB !== undefined) updateFields.push(`"MNB" = ${MNB !== null ? escape(MNB.toString()) : "NULL"}`);
     if (PCL !== undefined) updateFields.push(`"PCL" = ${PCL !== null ? escape(PCL.toString()) : "NULL"}`);
+    if (KXD2 !== undefined) updateFields.push(`"KXD2" = ${KXD2 !== null ? escape(KXD2.toString()) : "NULL"}`);
 
     if (updateFields.length === 0) {
       return reply.code(400).send({code: 400, message: "Không có dữ liệu để cập nhật"});

@@ -16,20 +16,8 @@ const GetSalinityPoints = async (req, reply) => {
   }
 };
 
-const idMapping = {
-  CauRachTra: "CRT",
-  CauThuThiem: "CTT",
-  CauOngThin: "COT",
-  CongKenhC: "CKC",
-  "KenhXang-AnHa": "KXAH",
-  MuiNhaBe: "MNB",
-  PhaCatLai: "PCL",
-};
-
 // GET /api/salinity-table?year=2007
 const GetSalinityData = async (req, reply) => {
-  const allowedColumns = Object.values(idMapping);
-
   try {
     const {kihieu} = req.params;
 
@@ -45,15 +33,10 @@ const GetSalinityData = async (req, reply) => {
         ORDER BY "Ngày" ASC
       `;
     } else {
-      const column = idMapping[kihieu];
-      if (!allowedColumns.includes(column)) {
-        return reply.code(400).send({code: 400, message: "Điểm đo không hợp lệ"});
-      }
-
       query = `
-        SELECT "Ngày", "${column}" AS "DoMan"
+        SELECT "Ngày", "${kihieu}" AS "DoMan"
         FROM hochiminh."DoMan"
-        WHERE "${column}" IS NOT NULL
+        WHERE "${kihieu}" IS NOT NULL
         ORDER BY "Ngày" ASC
       `;
     }
@@ -67,23 +50,15 @@ const GetSalinityData = async (req, reply) => {
 };
 
 const ExportSalinityDataToExcel = async (req, reply) => {
-  const allowedColumns = Object.values(idMapping);
-
   try {
     const {kihieu} = req.params;
     if (!kihieu) {
       return reply.code(400).send({code: 400, message: "Thiếu ký hiệu điểm đo"});
     }
-
-    const column = idMapping[kihieu];
-    if (!allowedColumns.includes(column)) {
-      return reply.code(400).send({code: 400, message: "Điểm đo không hợp lệ"});
-    }
-
     const query = `
-      SELECT "Ngày", "${column}" AS "DoMan"
+      SELECT "Ngày", "${kihieu}" AS "DoMan"
       FROM hochiminh."DoMan"
-      WHERE "${column}" IS NOT NULL
+      WHERE "${kihieu}" IS NOT NULL
       ORDER BY "Ngày" ASC
     `;
     const result = await QueryDatabase(query);
@@ -112,8 +87,6 @@ const ExportSalinityDataToExcel = async (req, reply) => {
 };
 
 const ExportSalinityDataWithRange = async (req, reply) => {
-  const allowedColumns = Object.values(idMapping);
-
   try {
     const {kiHieu, tenDiem, startDate, endDate, data} = req.body;
 
@@ -121,15 +94,6 @@ const ExportSalinityDataWithRange = async (req, reply) => {
       return reply.code(400).send({
         code: 400,
         message: "Thiếu thông tin: kiHieu, startDate, endDate",
-      });
-    }
-
-    // Validate kiHieu
-    const column = idMapping[kiHieu];
-    if (!allowedColumns.includes(column)) {
-      return reply.code(400).send({
-        code: 400,
-        message: "Điểm đo không hợp lệ",
       });
     }
 
@@ -141,9 +105,9 @@ const ExportSalinityDataWithRange = async (req, reply) => {
     } else {
       // Nếu không có data, query từ database với range
       const query = `
-        SELECT "Ngày", "${column}" AS "DoMan"
+        SELECT "Ngày", "${kihieu}" AS "DoMan"
         FROM hochiminh."DoMan"
-        WHERE "${column}" IS NOT NULL
+        WHERE "${kihieu}" IS NOT NULL
           AND "Ngày" >= $1
           AND "Ngày" <= $2
         ORDER BY "Ngày" ASC

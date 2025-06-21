@@ -13,7 +13,7 @@ const GetSearchAll = async (req, reply) => {
     let results = [];
 
     let queryHuyen = `
-      SELECT id, mahuyen, tenhuyen, dientichtunhien, shape_length, shape_area,
+      SELECT mahuyen, tenhuyen, dientichtunhien, shape_length, shape_area,
              ST_AsGeoJSON(geom)::json AS geom
       FROM hochiminh."DiaPhanHuyen"
       WHERE mahuyen='${escapedId}' OR unaccent(tenhuyen) ILIKE unaccent('%${escapedId}%')
@@ -24,7 +24,7 @@ const GetSearchAll = async (req, reply) => {
     }
 
     let queryXa = `
-     SELECT id, maxa, tenxa, mahuyen, tenhuyen, dientichtunhien, shape_length, shape_area,
+     SELECT maxa, tenxa, mahuyen, tenhuyen, dientichtunhien, shape_length, shape_area,
             ST_AsGeoJSON(geom)::json AS geom
      FROM hochiminh."DiaPhanXa"
      WHERE maxa='${escapedId}' OR mahuyen='${escapedId}' OR unaccent(tenxa) ILIKE unaccent('%${escapedId}%') OR unaccent(tenhuyen) ILIKE unaccent('%${escapedId}%')
@@ -36,7 +36,7 @@ const GetSearchAll = async (req, reply) => {
 
     // 🔍 Tìm theo điểm đo mặn
     let queryDiemDoMan = `
-     SELECT id, "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai", "ThoiGian", "TanSuat"
+     SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai", "ThoiGian", "TanSuat"
      FROM hochiminh."DiemDoMan"
      WHERE "KiHieu"='${escapedId}' 
         OR unaccent("TenDiem") ILIKE unaccent('%${escapedId}%')
@@ -154,41 +154,24 @@ const GetSearchDate = async (req, reply) => {
   }
 };
 
-const idMapping = {
-  CRT: "CauRachTra",
-  CTT: "CauThuThiem",
-  COT: "CauOngThin",
-  CKC: "CongKenhC",
-  KXAH: "KenhXang-AnHa",
-  MNB: "MuiNhaBe",
-  PCL: "PhaCatLai",
-};
-
 const GetStationPositionSalinity = async (req, reply) => {
-  const allowedCodes = Object.keys(idMapping);
-
   try {
-    const {code} = req.params;
+    const {kihieu} = req.params;
 
-    if (!code) {
+    if (!kihieu) {
       return reply.code(400).send({code: 400, message: "Thiếu mã điểm đo"});
     }
 
     let query;
-    if (code === "full") {
+    if (kihieu === "full") {
       query = `
         SELECT * FROM hochiminh."DiemDoMan"
         WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
       `;
     } else {
-      if (!allowedCodes.includes(code)) {
-        return reply.code(400).send({code: 400, message: "Mã điểm đo không hợp lệ"});
-      }
-
-      const kiHieu = idMapping[code];
       query = `
         SELECT * FROM hochiminh."DiemDoMan"
-        WHERE "KiHieu" = '${kiHieu}'
+        WHERE "KiHieu" = '${kihieu}'
       `;
     }
 

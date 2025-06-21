@@ -70,69 +70,6 @@ const initUsersTable = async () => {
   }
 };
 
-const initMapRegionsTable = async () => {
-  try {
-    // Kiểm tra xem bảng map_regions đã tồn tại trong schema public chưa
-    const checkIsHaveMapRegions = `
-      SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'map_regions'
-      );
-    `;
-
-    // Kiểm tra xem bảng map_regions có dữ liệu hay không
-    const checkIsHaveRowsMapRegions = `
-      SELECT COUNT(*)
-      FROM map_regions;
-    `;
-
-    // Thêm một số vùng mặc định nếu bảng chưa có dữ liệu
-    const addMapRegion = `
-      INSERT INTO public.map_regions
-        ("email", "geometry", "created_at")
-      VALUES
-        ('admin@gmail.com', ST_GeomFromText('POLYGON((104.0 23.5, 104.0 10.4, 109.5 10.4, 109.5 23.5, 104.0 23.5))', 4326), NOW());
-    `;
-
-    // Kiểm tra sự tồn tại của bảng map_regions
-    const checkMapRegions = await QueryDatabase(checkIsHaveMapRegions);
-
-    if (checkMapRegions.rows[0].exists === true) {
-      // Nếu bảng đã tồn tại, kiểm tra xem bảng có dữ liệu không
-      const checkRowMapRegions = await QueryDatabase(checkIsHaveRowsMapRegions);
-      if (checkRowMapRegions.rows[0].count == 0) {
-        // Nếu bảng không có dữ liệu, thêm dữ liệu mặc định vào bảng
-        await QueryDatabase(addMapRegion);
-      }
-      return;
-    } else {
-      // Nếu bảng chưa tồn tại, tạo bảng mới
-      const sql = `
-        CREATE TABLE public.map_regions (
-            Id uuid DEFAULT uuid_generate_v4() NOT NULL,
-            Email character varying(50) DEFAULT NULL::character varying,
-            Geometry geometry(POLYGON, 4326) NOT NULL, -- Lưu ranh giới dưới dạng Geometry
-            Created_at timestamp DEFAULT NOW(),
-            PRIMARY KEY (id)
-        );
-      `;
-      await QueryDatabase(sql);
-
-      // Sau khi tạo bảng xong, kiểm tra xem có dữ liệu không
-      const checkRowMapRegions = await QueryDatabase(checkIsHaveRowsMapRegions);
-      if (checkRowMapRegions.rows[0].count == 0) {
-        // Nếu không có dữ liệu, thêm dữ liệu mặc định
-        await QueryDatabase(addMapRegion);
-      }
-    }
-  } catch (error) {
-    console.log("Error init table MapRegions :: ", error);
-    logger.error(error);
-  }
-};
-
 const initFeedbacksTable = async () => {
   try {
     const checkIsHaveFeedbacks = `
@@ -190,7 +127,6 @@ const initTableDatabase = async () => {
     await initPostGISExtension(); // Tạo PostGIS Extension trước
     await initUsersTable(); // Tạo bảng Users
     await initFeedbacksTable(); // Tạo bảng Feedabcks
-    await initMapRegionsTable(); // Tạo bảng MapRegions
     console.log("Init table database PostgreSQL success");
   } catch (error) {
     console.log("Error init table database :: ", error);
