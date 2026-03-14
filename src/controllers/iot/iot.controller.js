@@ -84,8 +84,6 @@ const getAllData = async (request, reply) => {
         d.temp_value,
         d.temp_unit,
         d.temp_status,
-        d.tss_unit,
-        d.tss_status,
         -- Timestamps
         d.updated_at,
         d.deleted_at
@@ -150,10 +148,10 @@ const getDataByStation = async (request, reply) => {
     const stationQuery = `
       SELECT 
         serial_number, 
-        "TenTram", 
-        "ViDo" as latitude, 
-        "KinhDo" as longitude, 
-        "KiHieu" as station_code,
+        "station_name", 
+        "latitude", 
+        "longitude", 
+        "station_code",
         status 
       FROM iot_system.iot_stations 
       WHERE serial_number = $1
@@ -197,14 +195,10 @@ const getDataByStation = async (request, reply) => {
             json_build_object(
               'time', TO_CHAR(date_time, 'HH24:MI:SS'),
               'sensors', json_build_object(
-                'ftp', json_build_object('value', ftp_value, 'unit', ftp_unit, 'status', ftp_status),
-                'cod', json_build_object('value', cod_value, 'unit', cod_unit, 'status', cod_status),
-                'flow_in', json_build_object('value', flow_in_value, 'unit', flow_in_unit, 'status', flow_in_status),
-                'flow_out', json_build_object('value', flow_out_value, 'unit', flow_out_unit, 'status', flow_out_status),
-                'nh4', json_build_object('value', nh4_value, 'unit', nh4_unit, 'status', nh4_status),
-                'ph', json_build_object('value', ph_value, 'unit', ph_unit, 'status', ph_status),
+                'distance', json_build_object('value', distance_value, 'unit', distance_unit, 'status', distance_status),
+                'daily_rainfall', json_build_object('value', daily_rainfall_value, 'unit', daily_rainfall_unit, 'status', daily_rainfall_status),
+                'salt', json_build_object('value', salt_value, 'unit', salt_unit, 'status', salt_status),
                 'temp', json_build_object('value', temp_value, 'unit', temp_unit, 'status', temp_status),
-                'tss', json_build_object('value', tss_value, 'unit', tss_unit, 'status', tss_status)
               )
             ) ORDER BY date_time
           ) as readings
@@ -219,14 +213,14 @@ const getDataByStation = async (request, reply) => {
         SELECT 
           id,
           date_time,
-          ftp_value, ftp_unit, ftp_status,
-          cod_value, cod_unit, cod_status,
-          flow_in_value, flow_in_unit, flow_in_status,
-          flow_out_value, flow_out_unit, flow_out_status,
-          nh4_value, nh4_unit, nh4_status,
-          ph_value, ph_unit, ph_status,
+          -- Distance Sensor
+          distance_value, distance_unit, distance_status,
+          -- Daily Rainfall Sensor  
+          daily_rainfall_value, daily_rainfall_unit, daily_rainfall_status,
+          -- Salt Sensor
+          salt_value, salt_unit, salt_status,
+          -- Temperature Sensor
           temp_value, temp_unit, temp_status,
-          tss_value, tss_unit, tss_status,
           updated_at,
           deleted_at
         FROM iot_system.iot_data
@@ -346,12 +340,26 @@ const getStations = async (request, reply) => {
 
     let query = `
       SELECT 
-        s.*,
-        COUNT(d.id) as total_records,
-        MAX(d.date_time) as last_data_time,
-        MIN(d.date_time) as first_data_time
+        s.id,
+        s.station_code,
+        s.serial_number,
+        s.station_name,
+        s.longitude,
+        s.latitude,
+        s.station_type,
+        s.frequency,
+        s.time_period,
+        s.note,
+        s.status,
+        s.updated_at,
+        s.deleted_at,
+        -- Subquery để đếm chính xác số records
+        (SELECT COUNT(*) FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number) as total_records,
+        -- Subquery để lấy thời gian data cuối cùng
+        (SELECT MAX(date_time) FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number) as last_data_time,
+        -- Subquery để lấy thời gian data đầu tiên  
+        (SELECT MIN(date_time) FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number) as first_data_time
       FROM iot_system.iot_stations s
-      LEFT JOIN iot_system.iot_data d ON s.serial_number = d.serial_number
     `;
     const params = [];
 
@@ -360,11 +368,7 @@ const getStations = async (request, reply) => {
       params.push(status);
     }
 
-    query += ` 
-      GROUP BY s.id, s.station_code, s.serial_number, s.station_name, s.longitude, s.latitude, 
-               s.station_type, s.frequency, s.time_period, s.note, s.status, s.updated_at, s.deleted_at
-      ORDER BY s.serial_number
-    `;
+    query += " ORDER BY s.serial_number";
 
     const result = await queryDatabase(query, params);
 
@@ -419,13 +423,13 @@ const getSyncLogs = async (request, reply) => {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     // Get total count
-    const countQuery = `SELECT COUNT(*) as total FROM iot_sync_logs ${whereClause}`;
+    const countQuery = `SELECT COUNT(*) as total FROM iot_system.iot_sync_logs ${whereClause}`;
     const countResult = await queryDatabase(countQuery, params);
     const total = parseInt(countResult.rows[0].total);
 
     // Get logs
     const logsQuery = `
-      SELECT * FROM iot_sync_logs
+      SELECT * FROM iot_system.iot_sync_logs
       ${whereClause}
       ORDER BY sync_time DESC
       LIMIT $${paramCount++} OFFSET $${paramCount++}
@@ -464,23 +468,19 @@ const getStats = async (request, reply) => {
     const stationStatsQuery = `
       SELECT 
         d.serial_number,
-        s."TenDiem" as station_name,
-        s."KiHieu" as station_code,
+        s."station_name",
+        s."station_code",
         COUNT(*) as total_records,
         MIN(d.date_time) as first_date,
         MAX(d.date_time) as last_date,
         -- Count non-null values for each sensor type
-        COUNT(CASE WHEN ftp_value IS NOT NULL THEN 1 END) as ftp_readings,
-        COUNT(CASE WHEN cod_value IS NOT NULL THEN 1 END) as cod_readings,
-        COUNT(CASE WHEN flow_in_value IS NOT NULL THEN 1 END) as flow_in_readings,
-        COUNT(CASE WHEN flow_out_value IS NOT NULL THEN 1 END) as flow_out_readings,
-        COUNT(CASE WHEN nh4_value IS NOT NULL THEN 1 END) as nh4_readings,
-        COUNT(CASE WHEN ph_value IS NOT NULL THEN 1 END) as ph_readings,
-        COUNT(CASE WHEN temp_value IS NOT NULL THEN 1 END) as temp_readings,
-        COUNT(CASE WHEN tss_value IS NOT NULL THEN 1 END) as tss_readings
+        COUNT(CASE WHEN distance_value IS NOT NULL THEN 1 END) as distance_readings,
+        COUNT(CASE WHEN daily_rainfall_value IS NOT NULL THEN 1 END) as daily_rainfall_readings,
+        COUNT(CASE WHEN salt_value IS NOT NULL THEN 1 END) as salt_readings,
+        COUNT(CASE WHEN temp_value IS NOT NULL THEN 1 END) as temp_readings
       FROM iot_system.iot_data d
       LEFT JOIN iot_system.iot_stations s ON d.serial_number = s.serial_number
-      GROUP BY d.serial_number, s."TenDiem", s."KiHieu"
+      GROUP BY d.serial_number, s."station_name", s."station_code"
       ORDER BY d.serial_number
     `;
 
@@ -492,14 +492,10 @@ const getStats = async (request, reply) => {
         MIN(date_time) as first_date,
         MAX(date_time) as last_date,
         -- Count total sensor readings across all sensor types
-        COUNT(CASE WHEN ftp_value IS NOT NULL THEN 1 END) as total_ftp_readings,
-        COUNT(CASE WHEN cod_value IS NOT NULL THEN 1 END) as total_cod_readings,
-        COUNT(CASE WHEN flow_in_value IS NOT NULL THEN 1 END) as total_flow_in_readings,
-        COUNT(CASE WHEN flow_out_value IS NOT NULL THEN 1 END) as total_flow_out_readings,
-        COUNT(CASE WHEN nh4_value IS NOT NULL THEN 1 END) as total_nh4_readings,
-        COUNT(CASE WHEN ph_value IS NOT NULL THEN 1 END) as total_ph_readings,
-        COUNT(CASE WHEN temp_value IS NOT NULL THEN 1 END) as total_temp_readings,
-        COUNT(CASE WHEN tss_value IS NOT NULL THEN 1 END) as total_tss_readings
+        COUNT(CASE WHEN distance_value IS NOT NULL THEN 1 END) as total_distance_readings,
+        COUNT(CASE WHEN daily_rainfall_value IS NOT NULL THEN 1 END) as total_daily_rainfall_readings,
+        COUNT(CASE WHEN salt_value IS NOT NULL THEN 1 END) as total_salt_readings,
+        COUNT(CASE WHEN temp_value IS NOT NULL THEN 1 END) as total_temp_readings
       FROM iot_system.iot_data
     `;
 
@@ -511,10 +507,10 @@ const getStats = async (request, reply) => {
         records_synced,
         sync_time,
         error_message
-      FROM iot_sync_logs
+      FROM iot_system.iot_sync_logs
       WHERE id IN (
         SELECT MAX(id) 
-        FROM iot_sync_logs 
+        FROM iot_system.iot_sync_logs 
         GROUP BY serial_number
       )
       ORDER BY sync_time DESC
@@ -537,6 +533,51 @@ const getStats = async (request, reply) => {
     reply.code(500).send({
       success: false,
       message: "Failed to get stats",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * DELETE /api/iot/data/clear-all
+ * Clear all IoT data and optionally re-sync
+ *
+ * Body (optional):
+ * - resync: boolean - Trigger full sync after clearing (default: false)
+ * - daysBack: number - Days to sync back (default: 30)
+ */
+const clearAllData = async (request, reply) => {
+  try {
+    const {resync = false, daysBack = 30} = request.body || {};
+
+    // Xóa tất cả dữ liệu IoT
+    const deleteQuery = `DELETE FROM iot_system.iot_data`;
+    await queryDatabase(deleteQuery, []);
+
+    // Xóa sync logs cũ
+    const deleteSyncLogsQuery = `DELETE FROM iot_system.iot_sync_logs`;
+    await queryDatabase(deleteSyncLogsQuery, []);
+
+    let syncResult = null;
+
+    if (resync) {
+      // Trigger sync lại toàn bộ dữ liệu
+      request.log.info(`Starting full resync for ${daysBack} days back`);
+      syncResult = await iotSyncService.syncAllStations(daysBack);
+    }
+
+    reply.code(200).send({
+      success: true,
+      message: "All IoT data cleared successfully",
+      cleared: true,
+      resync: resync,
+      syncResult: syncResult,
+    });
+  } catch (error) {
+    request.log.error("Error clearing all IoT data:", error);
+    reply.code(500).send({
+      success: false,
+      message: "Failed to clear IoT data",
       error: error.message,
     });
   }
@@ -591,4 +632,5 @@ module.exports = {
   getSyncLogs,
   getStats,
   getHealthCheck,
+  clearAllData,
 };

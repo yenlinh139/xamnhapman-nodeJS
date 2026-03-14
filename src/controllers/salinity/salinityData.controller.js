@@ -1,6 +1,8 @@
-const escape = require("escape-html");
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
+
+// Xóa escape HTML - không cần thiết và gây chậm
+// const escape = require("escape-html");
 
 // CREATE - Thêm dữ liệu độ mặn mới
 const CreateSalinityData = async (req, reply) => {

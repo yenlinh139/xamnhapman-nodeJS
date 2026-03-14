@@ -6,6 +6,13 @@
  * Usage: node scripts/initialIoTSync.js
  */
 
+// Load environment variables
+const dotenv = require("dotenv");
+const path = require("path");
+dotenv.config({
+  path: path.join(__dirname, "../.env"),
+});
+
 const iotSyncService = require("../src/services/iotSyncService");
 
 async function runInitialSync() {
@@ -16,22 +23,85 @@ async function runInitialSync() {
   console.log("=====================================\n");
 
   try {
-    // Lấy danh sách tất cả stations từ database
+    // Test database connection first
     const queryDatabase = require("../src/utils/queryDatabase");
-    const stationsResult = await queryDatabase(
-      "SELECT serial_number, TenTram, status FROM iot_stations WHERE status = $1 ORDER BY serial_number",
-      ["active"],
-    );
+
+    console.log("🔗 Testing database connection...");
+    console.log(`DB_HOST: ${process.env.DB_HOST}`);
+    console.log(`DB_USER: ${process.env.DB_USER}`);
+    console.log(`DB_DATABASE: ${process.env.DB_DATABASE}\n`);
+
+    // Test basic connection
+    await queryDatabase("SELECT NOW() as current_time");
+    console.log("✅ Database connection successful\n");
+
+    // Check available schemas and tables
+    console.log("🔍 Checking available schemas and iot tables...");
+    const schemaResult = await queryDatabase(`
+      SELECT table_schema, table_name 
+      FROM information_schema.tables 
+      WHERE table_name LIKE '%iot%' 
+      ORDER BY table_schema, table_name
+    `);
+
+    if (schemaResult.rows.length > 0) {
+      console.log("Found IoT-related tables:");
+      schemaResult.rows.forEach((row) => {
+        console.log(`  - ${row.table_schema}.${row.table_name}`);
+      });
+      console.log();
+    }
+
+    // Try different possible table references for iot_stations
+    const possibleTables = ["iot_stations", "public.iot_stations", "iot_system.iot_stations"];
+
+    let stationsResult = null;
+    let workingTableName = null;
+
+    for (const tableName of possibleTables) {
+      try {
+        console.log(`🔍 Trying table: ${tableName}`);
+        stationsResult = await queryDatabase(
+          `SELECT serial_number, station_name, status FROM ${tableName} WHERE status = $1 ORDER BY serial_number`,
+          ["active"],
+        );
+        workingTableName = tableName;
+        console.log(`✅ Successfully accessed ${tableName}`);
+        break;
+      } catch (err) {
+        console.log(`❌ Failed to access ${tableName}: ${err.message}`);
+        continue;
+      }
+    }
+
+    if (!stationsResult) {
+      console.log("\n⚠️  Could not access iot_stations table with any naming convention");
+      console.log("Available tables are listed above. Please check the correct table name.");
+      process.exit(1);
+    }
 
     if (stationsResult.rows.length === 0) {
-      console.log("⚠️  No active stations found in database");
-      console.log("Please insert stations into iot_stations table first");
+      console.log(`⚠️  No active stations found in ${workingTableName}`);
+      console.log("Please insert stations into the table first or check the status values");
+
+      // Show all stations regardless of status for debugging
+      const allStationsResult = await queryDatabase(
+        `SELECT serial_number, station_name, status FROM ${workingTableName} ORDER BY serial_number`,
+      );
+
+      if (allStationsResult.rows.length > 0) {
+        console.log("\nAll stations found in table:");
+        allStationsResult.rows.forEach((station, index) => {
+          console.log(`${index + 1}. ${station.serial_number} - ${station.station_name} (${station.status})`);
+        });
+      }
+
       process.exit(1);
     }
 
     console.log(`Found ${stationsResult.rows.length} active station(s):\n`);
     stationsResult.rows.forEach((station, index) => {
-      console.log(`${index + 1}. ${station.serial_number} - ${station.TenTram}`);
+      console.log(`${index + 1}. ${station.serial_number} - ${station.station_name}`);
     });
     console.log("\n=====================================\n");
 
@@ -43,7 +113,13 @@ async function runInitialSync() {
     const startTime = Date.now();
 
     for (const station of stationsResult.rows) {
-      console.log(`\n📡 Syncing: ${station.serial_number} - ${station.TenTram}`);
+      // Skip stations without serial_number
+      if (!station.serial_number || station.serial_number.trim() === "") {
+        console.log(`\n⚠️  Skipping station: ${station.station_name} (No serial number)`);
+        continue;
+      }
+
+      console.log(`\n📡 Syncing: ${station.serial_number} - ${station.station_name}`);
       console.log("─────────────────────────────────────");
 
       try {

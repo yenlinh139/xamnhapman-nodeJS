@@ -511,6 +511,7 @@ class IoTSyncService {
                 WHERE status = 'active'
                 AND serial_number IS NOT NULL 
                 AND TRIM(serial_number) != ''
+                AND serial_number != ''
                 ORDER BY serial_number
             `;
 

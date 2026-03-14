@@ -33,8 +33,8 @@ class IoTSyncBackup:
         # API Configuration
         self.API_BASE_URL = "https://thegreenlab.xyz/Datums/DataByDateJson"
         self.credentials = {
-            'username': 'nguyenduyliem@hcmuaf.edu.vn',
-            'password': 'DHNL@2345'
+            'username': 'ngkloi@gmail.com',
+            'password': 'ngkloi123'
         }
         
         # Database Configuration (từ ENV hoặc default)
@@ -203,7 +203,7 @@ class IoTSyncBackup:
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT serial_number, name 
+                SELECT serial_number, station_name 
                 FROM iot_stations 
                 WHERE status = 'active'
                 ORDER BY serial_number
@@ -291,8 +291,8 @@ class IoTSyncBackup:
         successful = 0
         failed = 0
         
-        for serial_number, name in stations:
-            self.logger.info(f"Syncing station: {serial_number} - {name}")
+        for serial_number, station_name in stations:
+            self.logger.info(f"Syncing station: {serial_number} - {station_name}")
             
             result = self.sync_station_daily(serial_number, start_date, end_date)
             results.append(result)

@@ -1,15 +1,30 @@
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
 const XLSX = require("xlsx");
+const NodeCache = require("node-cache");
+
+// Cache với TTL 5 phút cho data ít thay đổi
+const cache = new NodeCache({stdTTL: 300, checkperiod: 60});
 
 const GetSalinityPoints = async (req, reply) => {
   try {
-    const result = await QueryDatabase(`
-      SELECT * FROM hochiminh."DiemDoMan"
-      WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
-    `);
+    // Check cache first
+    const cacheKey = "salinity_points";
+    let result = cache.get(cacheKey);
 
-    return reply.code(200).send(result.rows);
+    if (!result) {
+      // Optimized query với SELECT cụ thể và index
+      const dbResult = await QueryDatabase(
+        `SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai" AS "MoTa"
+         FROM hochiminh."DiemDoMan"
+         WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
+         ORDER BY "TenDiem" ASC`,
+      );
+      result = dbResult.rows;
+      cache.set(cacheKey, result);
+    }
+
+    return reply.code(200).send(result);
   } catch (error) {
     logger.error(error);
     return reply.code(500).send({code: 500, message: "Internal Server Error"});
@@ -20,29 +35,60 @@ const GetSalinityPoints = async (req, reply) => {
 const GetSalinityData = async (req, reply) => {
   try {
     const {kihieu} = req.params;
+    const {limit = 1000, offset = 0, startDate, endDate} = req.query;
 
     if (!kihieu) {
       return reply.code(400).send({code: 400, message: "Thiếu ký hiệu điểm đo"});
     }
 
-    let query;
+    // Validate và sanitize tham số
+    const validStations = ["CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2"];
+    if (kihieu !== "full" && !validStations.includes(kihieu)) {
+      return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
+    }
+
+    const limitVal = Math.min(parseInt(limit), 5000); // Max 5000 records
+    const offsetVal = Math.max(parseInt(offset), 0);
+
+    let query,
+      params = [];
+    let whereClause = "";
+
+    // Thêm điều kiện thời gian nếu có
+    if (startDate && endDate) {
+      whereClause = ' AND "Ngày" BETWEEN $' + (params.length + 1) + " AND $" + (params.length + 2);
+      params.push(startDate, endDate);
+    }
+
     if (kihieu === "full") {
       query = `
-        SELECT "Ngày", "CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL"
+        SELECT "Ngày", "CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2"
         FROM hochiminh."DoMan"
-        ORDER BY "Ngày" ASC
+        WHERE 1=1 ${whereClause}
+        ORDER BY "Ngày" DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `;
+      params.push(limitVal, offsetVal);
     } else {
       query = `
         SELECT "Ngày", "${kihieu}" AS "DoMan"
         FROM hochiminh."DoMan"
-        WHERE "${kihieu}" IS NOT NULL
-        ORDER BY "Ngày" ASC
+        WHERE "${kihieu}" IS NOT NULL ${whereClause}
+        ORDER BY "Ngày" DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `;
+      params.push(limitVal, offsetVal);
     }
 
-    const result = await QueryDatabase(query);
-    return reply.code(200).send(result.rows);
+    const result = await QueryDatabase(query, params);
+    return reply.code(200).send({
+      data: result.rows,
+      pagination: {
+        limit: limitVal,
+        offset: offsetVal,
+        total: result.rowCount,
+      },
+    });
   } catch (error) {
     logger.error(error);
     return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});

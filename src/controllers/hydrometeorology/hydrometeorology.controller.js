@@ -1,18 +1,32 @@
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
 const XLSX = require("xlsx");
+const NodeCache = require("node-cache");
+
+// Cache cho static data (stations) - 1 giờ
+const stationCache = new NodeCache({stdTTL: 3600, checkperiod: 300});
+// Cache cho dynamic data - 10 phút
+const dataCache = new NodeCache({stdTTL: 600, checkperiod: 60});
 
 const GetHydrometeorology = async (req, reply) => {
   try {
-    // Chỉ lấy thông tin cần thiết của trạm, không cần lấy tất cả dữ liệu
-    const result = await QueryDatabase(`
-      SELECT "KiHieu", "TenTram", "KinhDo", "ViDo", "PhanLoai"
-      FROM hochiminh."TramKTTV"
-      WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
-      ORDER BY "TenTram" ASC
-    `);
+    // Check cache first
+    const cacheKey = "hydro_stations";
+    let result = stationCache.get(cacheKey);
 
-    return reply.code(200).send(result.rows);
+    if (!result) {
+      // Chỉ lấy thông tin cần thiết của trạm, không cần lấy tất cả dữ liệu
+      const dbResult = await QueryDatabase(`
+        SELECT "KiHieu", "TenTram", "KinhDo", "ViDo", "PhanLoai", "PhanLoai" AS "TinhTrang"
+        FROM hochiminh."TramKTTV"
+        WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
+        ORDER BY "TenTram" ASC
+      `);
+      result = dbResult.rows;
+      stationCache.set(cacheKey, result, 3600); // Cache 1 giờ
+    }
+
+    return reply.code(200).send(result);
   } catch (error) {
     logger.error(error);
     return reply.code(500).send({code: 500, message: "Internal Server Error"});
@@ -43,118 +57,112 @@ const idMapping = {
 const GetHydrometeorologyData = async (req, reply) => {
   try {
     const {kihieu} = req.params;
-    const {
-      startDate,
-      endDate,
-      limit = 100, // Mặc định giới hạn 100 bản ghi
-      offset = 0,
-      orderBy = 'DESC' // Mặc định sắp xếp từ mới nhất
-    } = req.query;
+    const {startDate, endDate, limit = 100, offset = 0, orderBy = "DESC"} = req.query;
 
     if (!kihieu) {
       return reply.code(400).send({code: 400, message: "Thiếu ký hiệu điểm đo"});
     }
 
-    let query;
-    let countQuery;
+    // Validate và sanitize inputs
+    const limitValue = Math.min(Math.max(parseInt(limit), 1), 1000);
+    const offsetValue = Math.max(parseInt(offset), 0);
+    const order = orderBy.toLowerCase() === "asc" ? "ASC" : "DESC";
 
-    // Tạo điều kiện WHERE cho thời gian
-    let timeCondition = '';
+    // Chuẩn bị query parameters
+    let params = [];
+    let timeCondition = "";
+
     if (startDate && endDate) {
-      timeCondition = ` AND "Ngày"::date BETWEEN '${startDate}' AND '${endDate}'`;
+      timeCondition = ` AND "Ngày"::date BETWEEN $${params.length + 1} AND $${params.length + 2}`;
+      params.push(startDate, endDate);
     } else if (startDate) {
-      timeCondition = ` AND "Ngày"::date >= '${startDate}'`;
+      timeCondition = ` AND "Ngày"::date >= $${params.length + 1}`;
+      params.push(startDate);
     } else if (endDate) {
-      timeCondition = ` AND "Ngày"::date <= '${endDate}'`;
+      timeCondition = ` AND "Ngày"::date <= $${params.length + 1}`;
+      params.push(endDate);
     }
 
-    // Validate limit và offset
-    const limitValue = Math.min(Math.max(parseInt(limit), 1), 1000); // Giới hạn tối đa 1000 bản ghi
-    const offsetValue = Math.max(parseInt(offset), 0);
-    const order = orderBy.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    let query, countQuery;
+    const limitParam = `$${params.length + 1}`;
+    const offsetParam = `$${params.length + 2}`;
 
-    // Xử lý trường hợp "full" - lấy dữ liệu từ cả 2 bảng với pagination
     if (kihieu === "full") {
-      // Query để đếm tổng số bản ghi
-      countQuery = `
-        SELECT COUNT(*) as total FROM (
-          SELECT "Ngày" FROM hochiminh."KhiTuong" WHERE 1=1 ${timeCondition}
-          UNION
-          SELECT "Ngày" FROM hochiminh."ThuyVan" WHERE 1=1 ${timeCondition}
-        ) as combined_data
+      // Optimized query cho full data - tránh UNION ALL
+      query = `
+        SELECT 
+          k."Ngày",
+          k."R_AP", k."R_BC", k."R_CG", k."R_CL", k."R_CC",
+          k."R_HM", k."R_LMX", k."R_LS", k."R_MDC", k."R_NB",
+          k."R_PVC", k."R_TTH", k."R_TSH", k."R_TD",
+          k."Ttb_TSH", k."Tx_TSH", k."Tm_TSH",
+          t."Htb_NB", t."Hx_NB", t."Hm_NB",
+          t."Htb_PA", t."Hx_PA", t."Hm_PA"
+        FROM hochiminh."KhiTuong" k
+        FULL OUTER JOIN hochiminh."ThuyVan" t ON DATE(k."Ngày") = DATE(t."Ngày")
+        WHERE (k."Ngày" IS NOT NULL OR t."Ngày" IS NOT NULL) ${timeCondition}
+        ORDER BY COALESCE(k."Ngày", t."Ngày") ${order}
+        LIMIT ${limitParam} OFFSET ${offsetParam}
       `;
 
-      query = `
-        WITH combined_data AS (
-          SELECT "Ngày", "R_AP", "R_BC", "R_CG", "R_CL", "R_CC", 
-                 "R_HM", "R_LMX", "R_LS", "R_MDC", "R_NB", 
-                 "R_PVC", "R_TTH", "R_TSH", "R_TD", "Ttb_TSH", "Tx_TSH", "Tm_TSH",
-                 NULL as "Htb_NB", NULL as "Hx_NB", NULL as "Hm_NB",
-                 NULL as "Htb_PA", NULL as "Hx_PA", NULL as "Hm_PA"
-          FROM hochiminh."KhiTuong"
-          WHERE 1=1 ${timeCondition}
-          UNION ALL
-          SELECT "Ngày", NULL as "R_AP", NULL as "R_BC", NULL as "R_CG", NULL as "R_CL", NULL as "R_CC",
-                 NULL as "R_HM", NULL as "R_LMX", NULL as "R_LS", NULL as "R_MDC", NULL as "R_NB",
-                 NULL as "R_PVC", NULL as "R_TTH", NULL as "R_TSH", NULL as "R_TD", 
-                 NULL as "Ttb_TSH", NULL as "Tx_TSH", NULL as "Tm_TSH",
-                 "Htb_NB", "Hx_NB", "Hm_NB", "Htb_PA", "Hx_PA", "Hm_PA"
-          FROM hochiminh."ThuyVan"
-          WHERE 1=1 ${timeCondition}
-        )
-        SELECT * FROM combined_data
-        ORDER BY "Ngày"::date ${order}
-        LIMIT ${limitValue} OFFSET ${offsetValue}
+      countQuery = `
+        SELECT COUNT(*) as total 
+        FROM hochiminh."KhiTuong" k
+        FULL OUTER JOIN hochiminh."ThuyVan" t ON DATE(k."Ngày") = DATE(t."Ngày")
+        WHERE (k."Ngày" IS NOT NULL OR t."Ngày" IS NOT NULL) ${timeCondition}
       `;
     } else {
-      if (!idMapping[kihieu]) {
-        return reply.code(400).send({code: 400, message: "Điểm đo không hợp lệ"});
+      // Single station query
+      const mapping = idMapping[kihieu];
+      if (!mapping) {
+        return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
       }
 
-      const {table, columns} = idMapping[kihieu];
-      const selectColumns = columns.map((col) => `"${col}"`).join(", ");
-      const whereConditions = columns.map((col) => `"${col}" IS NOT NULL`).join(" OR ");
-
-      // Query để đếm tổng số bản ghi
-      countQuery = `
-        SELECT COUNT(*) as total
-        FROM hochiminh."${table}"
-        WHERE (${whereConditions}) ${timeCondition}
-      `;
+      const columns = mapping.columns.map((col) => `"${col}"`).join(", ");
+      const tableName = mapping.table;
 
       query = `
-        SELECT "Ngày", ${selectColumns}
-        FROM hochiminh."${table}"
-        WHERE (${whereConditions}) ${timeCondition}
-        ORDER BY "Ngày"::date ${order}
-        LIMIT ${limitValue} OFFSET ${offsetValue}
+        SELECT "Ngày", ${columns}
+        FROM hochiminh."${tableName}"
+        WHERE 1=1 ${timeCondition}
+        ORDER BY "Ngày" ${order}
+        LIMIT ${limitParam} OFFSET ${offsetParam}
+      `;
+
+      countQuery = `
+        SELECT COUNT(*) as total
+        FROM hochiminh."${tableName}"
+        WHERE 1=1 ${timeCondition}
       `;
     }
 
-    // Thực hiện cả 2 query song song để tối ưu performance
+    // Add limit and offset to params
+    params.push(limitValue, offsetValue);
+
+    // Execute queries in parallel
     const [dataResult, countResult] = await Promise.all([
-      QueryDatabase(query),
-      QueryDatabase(countQuery)
+      QueryDatabase(query, params),
+      QueryDatabase(countQuery, params.slice(0, -2)), // Remove limit/offset for count
     ]);
 
-    const totalRecords = countResult.rows[0]?.total || 0;
-    const totalPages = Math.ceil(totalRecords / limitValue);
-    const currentPage = Math.floor(offsetValue / limitValue) + 1;
+    const total = parseInt(countResult.rows[0]?.total || 0);
+    const totalPages = Math.ceil(total / limitValue);
 
     return reply.code(200).send({
+      code: 200,
       data: dataResult.rows,
       pagination: {
-        currentPage,
-        totalPages,
-        totalRecords: parseInt(totalRecords),
+        page: Math.floor(offsetValue / limitValue) + 1,
         limit: limitValue,
         offset: offsetValue,
-        hasNext: currentPage < totalPages,
-        hasPrev: currentPage > 1
-      }
+        total,
+        totalPages,
+        hasNext: offsetValue + limitValue < total,
+        hasPrev: offsetValue > 0,
+      },
     });
   } catch (error) {
-    logger.error("Error in GetHydrometeorologyData:", error);
+    logger.error("GetHydrometeorologyData Error:", error);
     return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
   }
 };

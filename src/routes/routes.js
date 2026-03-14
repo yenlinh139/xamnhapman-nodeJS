@@ -35,13 +35,29 @@ const {
   GetStationPositionSalinity,
   GetStationPositionHydrometeorology,
 } = require("../controllers/search/getSearch.controller");
-const {GetHydrometeorology, GetHydrometeorologyData} = require("../controllers/hydrometeorology/hydrometeorology.controller");
+const {
+  GetHydrometeorology,
+  GetHydrometeorologyData,
+  GetLatestHydrometeorologyData,
+} = require("../controllers/hydrometeorology/hydrometeorology.controller");
+const {
+  GetHydrometeorologySummaryStats,
+  GetRainfallStatsByStation,
+  GetWaterLevelStatsByStation,
+  GetMonthlyYearlyStats,
+  GetWeatherHydroAlerts,
+  GetHydrometeorologicalDashboard,
+} = require("../controllers/hydrometeorology/hydrometeorologyStats.controller");
+// const {cacheMiddleware} = require("../middlewares/cacheMiddleware"); // Tạm tắt để test
 const {
   LogReportDownload,
   GetReportHistory,
   GetReportStatistics,
   DeleteReportLog,
 } = require("../controllers/salinity/reportHistory.controller");
+
+// IoT Routes
+const iotRoutes = require("./iotRoutes");
 
 const router = (router, opts, next) => {
   router.get("/", async (req, res) => {
@@ -102,8 +118,20 @@ const router = (router, opts, next) => {
   router.get("/station-position-hydrometeorology/:code", GetStationPositionHydrometeorology);
 
   //hydrometeorology
-  router.get("/hydrometeorology-station", GetHydrometeorology);
+  router.get("/hydrometeorology-stations", GetHydrometeorology);
   router.get("/hydrometeorology-data/:kihieu", GetHydrometeorologyData);
+  router.get("/hydrometeorology-latest", GetLatestHydrometeorologyData);
+
+  //hydrometeorology statistics
+  router.get("/hydrometeorology-stats/summary", GetHydrometeorologySummaryStats);
+  router.get("/hydrometeorology-stats/rainfall-by-station", GetRainfallStatsByStation);
+  router.get("/hydrometeorology-stats/water-level-by-station", GetWaterLevelStatsByStation);
+  router.get("/hydrometeorology-stats/monthly-yearly", GetMonthlyYearlyStats);
+  router.get("/hydrometeorology-stats/alerts", GetWeatherHydroAlerts);
+  router.get("/hydrometeorology-stats/dashboard", GetHydrometeorologicalDashboard);
+
+  // IoT Data Routes
+  router.register(iotRoutes, {prefix: "/iot"});
 
   next();
 };

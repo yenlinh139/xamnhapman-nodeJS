@@ -1,5 +1,7 @@
 const iotController = require("../controllers/iot/iot.controller");
 const iotSyncController = require("../controllers/iot/iotSync.controller");
+const {ExportIoTDataWithRange} = require("../controllers/iot/iotExport.controller");
+const VerifyToken = require("../middlewares/verifyToken");
 
 /**
  * IoT Data Routes
@@ -399,6 +401,69 @@ async function iotRoutes(fastify, options) {
       },
     },
     iotSyncController.getCronStatus,
+  );
+
+  // Export IoT data
+  fastify.post(
+    "/export",
+    {
+      onRequest: [VerifyToken],
+      schema: {
+        description: "Export IoT data in various formats",
+        tags: ["IoT Export"],
+        body: {
+          type: "object",
+          required: ["stations", "startDate", "endDate", "format"],
+          properties: {
+            stations: {
+              type: "array",
+              items: {type: "string"},
+              description: "Array of station serial numbers",
+            },
+            startDate: {type: "string", format: "date", description: "Start date"},
+            endDate: {type: "string", format: "date", description: "End date"},
+            format: {type: "string", enum: ["excel", "pdf", "gis"], description: "Export format"},
+          },
+        },
+        response: {
+          200: {
+            type: "string",
+            description: "File content (binary)",
+          },
+        },
+      },
+    },
+    ExportIoTDataWithRange,
+  );
+
+  // Clear all IoT data
+  fastify.delete(
+    "/data/clear",
+    {
+      onRequest: [VerifyToken],
+      schema: {
+        description: "Clear all IoT data and optionally trigger resync",
+        tags: ["IoT Data Management"],
+        querystring: {
+          type: "object",
+          properties: {
+            resync: {type: "boolean", default: false, description: "Trigger resync after clearing data"},
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              success: {type: "boolean"},
+              message: {type: "string"},
+              cleared: {type: "object"},
+              resyncTriggered: {type: "boolean"},
+            },
+          },
+        },
+      },
+    },
+    iotController.clearAllData,
   );
 }
 

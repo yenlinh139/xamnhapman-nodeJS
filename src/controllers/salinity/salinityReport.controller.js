@@ -3,6 +3,10 @@ const logger = require("../../loggers/loggers.config");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
+const NodeCache = require("node-cache");
+
+// Cache với TTL 1 tiếng cho report data
+const reportCache = new NodeCache({stdTTL: 3600, checkperiod: 300});
 
 // Station mapping
 const stationMapping = {

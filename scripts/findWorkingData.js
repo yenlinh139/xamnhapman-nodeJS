@@ -7,8 +7,8 @@ const httpsAgent = new https.Agent({
 });
 
 const API_ENDPOINT = "https://thegreenlab.xyz/Datums/DataByDateJson";
-const USERNAME = "nguyenduyliem@hcmuaf.edu.vn";
-const PASSWORD = "DHNL@2345";
+const USERNAME = "ngkloi@gmail.com";
+const PASSWORD = "ngkloi123";
 
 // Danh sách serial numbers có thể test
 const TEST_SERIALS = [

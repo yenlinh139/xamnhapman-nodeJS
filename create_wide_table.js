@@ -58,11 +58,6 @@ async function createWideFormatTable() {
         temp_unit VARCHAR(20),
         temp_status VARCHAR(50),
         
-        -- TSS sensor
-        tss_value NUMERIC(10, 4),
-        tss_unit VARCHAR(20),
-        tss_status VARCHAR(50),
-        
         updated_at TIMESTAMP null,
         deleted_at TIMESTAMP null,
         

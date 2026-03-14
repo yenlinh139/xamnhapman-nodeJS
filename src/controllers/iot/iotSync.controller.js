@@ -23,7 +23,7 @@ const initialSync = async (request, reply) => {
       // Sync specific stations
       const placeholders = stations.map((_, idx) => `$${idx + 1}`).join(",");
       const stationsResult = await queryDatabase(
-        `SELECT serial_number, TenTram, status 
+        `SELECT serial_number, station_name, status 
                  FROM iot_system.iot_stations 
                  WHERE serial_number IN (${placeholders})
                  ORDER BY serial_number`,
@@ -33,7 +33,7 @@ const initialSync = async (request, reply) => {
     } else {
       // Sync all active stations
       const stationsResult = await queryDatabase(
-        `SELECT serial_number, TenTram, status 
+        `SELECT serial_number, station_name, status 
                  FROM iot_system.iot_stations 
                  WHERE status = 'active'
                  ORDER BY serial_number`,
@@ -62,7 +62,7 @@ const initialSync = async (request, reply) => {
 
     for (const station of stationsToSync) {
       try {
-        request.log.info(`Syncing station: ${station.serial_number} - ${station.TenTram}`);
+        request.log.info(`Syncing station: ${station.serial_number} - ${station.station_name}`);
 
         const result = await iotSyncService.initialFullSync(station.serial_number, chunkDays);
 
@@ -73,7 +73,7 @@ const initialSync = async (request, reply) => {
 
           results.push({
             serialNumber: station.serial_number,
-            TenTram: station.TenTram,
+            station_name: station.station_name,
             success: true,
             inserted: result.totalInserted,
             updated: result.totalUpdated,
@@ -86,7 +86,7 @@ const initialSync = async (request, reply) => {
           failedCount++;
           results.push({
             serialNumber: station.serial_number,
-            TenTram: station.TenTram,
+            station_name: station.station_name,
             success: false,
             error: result.error,
           });
@@ -102,7 +102,7 @@ const initialSync = async (request, reply) => {
         failedCount++;
         results.push({
           serialNumber: station.serial_number,
-          TenTram: station.TenTram,
+          station_name: station.station_name,
           success: false,
           error: error.message,
         });
@@ -175,7 +175,7 @@ const syncDateRange = async (request, reply) => {
 
     // Verify station exists
     const stationQuery = `
-            SELECT serial_number, TenTram, status 
+            SELECT serial_number, station_name, status 
             FROM iot_system.iot_stations 
             WHERE serial_number = $1
         `;
@@ -201,10 +201,10 @@ const syncDateRange = async (request, reply) => {
     if (result.success) {
       reply.code(200).send({
         success: true,
-        message: `Data synced successfully for ${station.TenTram}`,
+        message: `Data synced successfully for ${station.station_name}`,
         result: {
           serialNumber: station.serial_number,
-          TenTram: station.TenTram,
+          station_name: station.station_name,
           startDate,
           endDate,
           inserted: result.inserted,
@@ -216,7 +216,7 @@ const syncDateRange = async (request, reply) => {
     } else {
       reply.code(400).send({
         success: false,
-        message: `Sync failed for ${station.TenTram}`,
+        message: `Sync failed for ${station.station_name}`,
         error: result.error,
       });
     }
@@ -245,7 +245,7 @@ const getSyncStatus = async (request, reply) => {
                 records_synced,
                 status,
                 synced_at
-            FROM iot_sync_logs
+            FROM iot_system.iot_sync_logs
             ORDER BY serial_number, synced_at DESC
         `;
 
@@ -255,14 +255,14 @@ const getSyncStatus = async (request, reply) => {
     const statsQuery = `
             SELECT 
                 s.serial_number,
-                s.TenTram,
+                s.station_name,
                 s.status,
                 COUNT(d.id) as total_records,
                 MIN(d.date) as earliest_date,
                 MAX(d.date) as latest_date
             FROM iot_system.iot_stations s
             LEFT JOIN iot_system.iot_data d ON s.serial_number = d.serial_number
-            GROUP BY s.serial_number, s.TenTram, s.status
+            GROUP BY s.serial_number, s.station_name, s.status
             ORDER BY s.serial_number
         `;
 
@@ -274,7 +274,7 @@ const getSyncStatus = async (request, reply) => {
 
       return {
         serialNumber: station.serial_number,
-        TenTram: station.TenTram,
+        station_name: station.station_name,
         status: station.status,
         totalRecords: parseInt(station.total_records),
         earliestDate: station.earliest_date,
