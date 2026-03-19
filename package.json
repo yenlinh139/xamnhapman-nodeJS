@@ -62,6 +62,7 @@
     "http": "^0.0.1-security",
     "jsonwebtoken": "^9.0.2",
     "mime-types": "^2.1.35",
+    "node-cache": "^5.1.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
     "nodemon": "^3.1.7",
