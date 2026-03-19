@@ -5,7 +5,7 @@ const logger = require("../loggers/loggers.config");
 const db = new Pool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  password: String(process.env.DB_PASSWORD),
   database: process.env.DB_DATABASE,
   port: Number(process.env.DB_PORT),
   max: 100, // Số lượng kết nối tối đa trong pool

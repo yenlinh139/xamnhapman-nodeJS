@@ -1,10 +1,10 @@
 const db = require("../connection/database.connection");
 const logger = require("../loggers/loggers.config");
 
-const QueryDatabase = async (sql) => {
+const QueryDatabase = async (sql, params = []) => {
   const client = await db.connect();
   try {
-    const data = await client.query(sql);
+    const data = await client.query(sql, params);
     return data;
   } catch (err) {
     console.error("Database Query Error 🔥:: ");

@@ -7,14 +7,36 @@
     "test": "test"
   },
   "engines": {
-    "node": "14.x"
+    "node": ">=14.x"
   },
   "scripts": {
     "test": "mocha",
     "format": "prettier --write \"./**/*.{js,jsx,json}\"",
     "start": "fastify start -l info ./src/server.js --env-file .env",
-    "dev": "bun run format && bun run --watch ./src/server.js --env-file .env",
-    "build": "babel ./src/server.js --out-file ./dist/server.js"
+    "dev": "npm run format && node ./src/server.js",
+    "build": "babel ./src/server.js --out-file ./dist/server.js",
+    "pm2:start": "pm2 start ecosystem.config.js --env production",
+    "pm2:restart": "pm2 restart fastify-api",
+    "pm2:stop": "pm2 stop fastify-api",
+    "pm2:delete": "pm2 delete fastify-api",
+    "pm2:logs": "pm2 logs fastify-api",
+    "pm2:status": "pm2 status",
+    "raspberry:start": "bash start-raspberry.sh",
+    "raspberry:monitor": "bash monitor-raspberry.sh",
+    "raspberry:docker": "docker-compose -f docker-compose.raspberry.yml up -d",
+    "iot:sync": "node scripts/initialIoTSync.js",
+    "iot:sync-batch": "node scripts/batchIoTSync.js",
+    "iot:create-tables": "node scripts/createIoTTables.js",
+    "iot:test-db": "node scripts/testDatabaseConnection.js",
+    "iot:sync-backup": "python scripts/iot_sync_backup.py --all --days 7",
+    "iot:sync-station": "python scripts/iot_sync_backup.py --station",
+    "iot:install-python": "cd scripts && pip install -r requirements.txt",
+    "iot:test": "python scripts/test_iot_sync.py",
+    "iot:test-quick": "python scripts/test_iot_sync.py --quick",
+    "hydro:test-stats": "node test-hydro-stats.js",
+    "hydro:test-stats-perf": "node test-hydro-stats.js --performance",
+    "iot:update-stations": "node scripts/update_iot_stations_data.js",
+    "iot:update-schema": "node scripts/update_iot_schema.js"
   },
   "keywords": [],
   "author": "Nguyen Vo Yen Linh",
@@ -40,6 +62,7 @@
     "http": "^0.0.1-security",
     "jsonwebtoken": "^9.0.2",
     "mime-types": "^2.1.35",
+    "node-cache": "^5.1.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
     "nodemon": "^3.1.7",
