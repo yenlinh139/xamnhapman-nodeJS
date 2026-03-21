@@ -1,5 +1,10 @@
-const {Pool} = require("pg");
+const {Pool, types} = require("pg");
 const logger = require("../loggers/loggers.config");
+
+// Keep PostgreSQL timestamp values as raw strings to avoid timezone shifts
+// when frontend compares with DB console values.
+types.setTypeParser(1114, (value) => value); // timestamp without time zone
+types.setTypeParser(1184, (value) => value); // timestamp with time zone
 
 // pg configuration Local
 const db = new Pool({

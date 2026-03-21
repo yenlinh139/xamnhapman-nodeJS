@@ -105,7 +105,7 @@ const GetFeedbackStatsByTime = async (req, reply) => {
 
     const sql = `
       SELECT 
-        TO_CHAR(created_at, '${dateFormat}') as period,
+        TO_CHAR(${groupBy}, '${dateFormat}') as period,
         COUNT(*) as total_feedbacks,
         AVG(rating) as average_rating,
         COUNT(CASE WHEN rating >= 4 THEN 1 END) as positive_feedbacks,

@@ -63,7 +63,8 @@ const SignUp = async (req, res) => {
 
     // Mã hóa email trước khi đưa vào URL
     const encodedEmail = encodeURIComponent(escapedEmail); // Mã hóa email
-    const verifyUrl = `http://localhost:5173/verify-email/${encodedEmail}`;
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost";
+    const verifyUrl = `${frontendUrl}/verify-email/${encodedEmail}`;
 
     // Gửi email xác nhận sau khi đăng ký thành công
     const subject = "Xác thực email";
@@ -200,7 +201,7 @@ const verifyEmail = async (req, res) => {
     return res.status(200).send({
       status: 200,
       message: "Email successfully verified!",
-      redirectUrl: "http://localhost:5173/login", // Đường dẫn quay lại đăng nhập
+      redirectUrl: `${process.env.FRONTEND_URL || "http://localhost"}/login`, // Đường dẫn quay lại đăng nhập
     });
   } catch (error) {
     logger.error(error);
