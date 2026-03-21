@@ -35,15 +35,19 @@ const GetSearchAll = async (req, reply) => {
     // Tìm kiếm đơn giản không dùng unaccent để tránh lỗi database
     const searchPattern = `%${decodedSearchTerm}%`;
 
-    const queries = [
+    const queryTasks = [
       // Query Huyện
       QueryDatabase(
         `
-        SELECT "MaHuyen", "TenHuyen", "dientichtunhien", "shape_length", "shape_area",
-               ST_AsGeoJSON(geom)::json AS geom, 'huyen' as type
+        SELECT "maHuyen" AS mahuyen, "tenHuyen" AS tenhuyen,
+               "dienTichTuNhien" AS dientichtunhien,
+               "SHAPE_Length" AS shape_length,
+               "SHAPE_Area" AS shape_area,
+               ST_AsGeoJSON(geom)::json AS geom,
+               'huyen' AS type
         FROM hochiminh."DiaPhanHuyen"
-        WHERE "MaHuyen" = $1 OR LOWER("TenHuyen") LIKE LOWER($2)
-        ORDER BY "TenHuyen"
+        WHERE "maHuyen" = $1 OR LOWER("tenHuyen") LIKE LOWER($2)
+        ORDER BY "tenHuyen"
         LIMIT $3
       `,
         [decodedSearchTerm, searchPattern, limitVal],
@@ -52,13 +56,20 @@ const GetSearchAll = async (req, reply) => {
       // Query Xã
       QueryDatabase(
         `
-        SELECT "MaXa", "TenXa", "MaHuyen", "TenHuyen", "dientichtunhien", "shape_length", "shape_area",
-               ST_AsGeoJSON(geom)::json AS geom, 'xa' as type
+        SELECT "maXa" AS maxa,
+               "tenXa" AS tenxa,
+               "maHuyen" AS mahuyen,
+               "tenHuyen" AS tenhuyen,
+               "dienTichTuNhien" AS dientichtunhien,
+               "SHAPE_Length" AS shape_length,
+               "SHAPE_Area" AS shape_area,
+               ST_AsGeoJSON(geom)::json AS geom,
+               'xa' AS type
         FROM hochiminh."DiaPhanXa"
-        WHERE "MaXa" = $1 OR "MaHuyen" = $1 OR 
-              LOWER("TenXa") LIKE LOWER($2) OR 
-              LOWER("TenHuyen") LIKE LOWER($2)
-        ORDER BY "TenXa", "TenHuyen"
+        WHERE "maXa" = $1 OR "maHuyen" = $1 OR
+              LOWER("tenXa") LIKE LOWER($2) OR
+              LOWER("tenHuyen") LIKE LOWER($2)
+        ORDER BY "tenXa", "tenHuyen"
         LIMIT $3
       `,
         [decodedSearchTerm, searchPattern, limitVal],
@@ -67,7 +78,7 @@ const GetSearchAll = async (req, reply) => {
       // Query Điểm đo mặn
       QueryDatabase(
         `
-        SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai", "ThoiGian", "TanSuat", 'diem_do_man' as type
+        SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai", "ThoiGian", "TanSuat", 'diem_do_man' AS type
         FROM hochiminh."DiemDoMan"
         WHERE "KiHieu" = $1 OR LOWER("TenDiem") LIKE LOWER($2)
         ORDER BY "TenDiem"
@@ -79,23 +90,51 @@ const GetSearchAll = async (req, reply) => {
       // Query Trạm khí tượng thủy văn
       QueryDatabase(
         `
-        SELECT "KiHieu", "TenTram", "KinhDo", "ViDo", "LoaiTram", 'khi_tuong_thuy_van' as type
-        FROM hochiminh."KhiTuongThuyVan"
+        SELECT "KiHieu", "TenTram", "KinhDo", "ViDo", "PhanLoai" AS "LoaiTram", 'khi_tuong_thuy_van' AS type
+        FROM hochiminh."TramKTTV"
         WHERE "KiHieu" = $1 OR LOWER("TenTram") LIKE LOWER($2)
         ORDER BY "TenTram"
         LIMIT $3
       `,
         [decodedSearchTerm, searchPattern, limitVal],
       ),
-    ];
 
-    const [resultHuyen, resultXa, resultDiemDoMan, resultKhiTuong] = await Promise.all(queries);
+        // Query Trạm IoT
+        QueryDatabase(
+          `
+          SELECT serial_number AS "SerialNumber",
+                 station_name AS "StationName",
+                 station_code AS "StationCode",
+                 latitude AS "ViDo",
+                 longitude AS "KinhDo",
+                 station_type AS "StationType",
+                 frequency AS "TanSuat",
+                 time_period AS "ThoiGian",
+                 status AS "Status",
+                 'iot_station' AS type
+          FROM iot_system.iot_stations
+          WHERE serial_number = $1
+             OR LOWER(station_name) LIKE LOWER($2)
+             OR LOWER(station_code) LIKE LOWER($3)
+          ORDER BY station_name
+          LIMIT $4
+        `,
+          [decodedSearchTerm, searchPattern, searchPattern, limitVal],
+        ),
+      ];
+    const settled = await Promise.allSettled(queryTasks);
 
-    // Combine results
-    if (resultHuyen && resultHuyen.rowCount > 0) results.push(...resultHuyen.rows);
-    if (resultXa && resultXa.rowCount > 0) results.push(...resultXa.rows);
-    if (resultDiemDoMan && resultDiemDoMan.rowCount > 0) results.push(...resultDiemDoMan.rows);
-    if (resultKhiTuong && resultKhiTuong.rowCount > 0) results.push(...resultKhiTuong.rows);
+    // Combine results (do not fail all when one query fails)
+    settled.forEach((item) => {
+      if (item.status === "fulfilled") {
+        const queryResult = item.value;
+        if (queryResult && queryResult.rowCount > 0) {
+          results.push(...queryResult.rows);
+        }
+      } else {
+        logger.error("Search sub-query failed:", item.reason?.message || item.reason);
+      }
+    });
 
     // Cache results
     searchCache.set(cacheKey, results, 1800);
@@ -119,12 +158,12 @@ const GetSearchAll = async (req, reply) => {
 const GetAllDistricts = async (req, reply) => {
   try {
     const result = await QueryDatabase(`
-      SELECT tenhuyen,
+      SELECT "tenHuyen" AS tenhuyen,
              ST_Y(ST_Centroid(geom)) AS centerLat,
              ST_X(ST_Centroid(geom)) AS centerLng
       FROM hochiminh."DiaPhanHuyen"
-      WHERE tenhuyen IS NOT NULL
-      ORDER BY tenhuyen ASC
+      WHERE "tenHuyen" IS NOT NULL
+      ORDER BY "tenHuyen" ASC
     `);
 
     if (result.rowCount === 0) {
