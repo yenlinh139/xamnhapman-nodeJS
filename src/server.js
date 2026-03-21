@@ -100,9 +100,14 @@ app.ready(async () => {
   // Redis Connection
   await redisClient.connect();
 
-  // Start IoT Sync Cron Job (every 3 hours)
-  iotSyncCron.start();
-  console.log("✓ IoT sync cron job started (every 3 hours)");
+  // Start IoT Sync Cron Job (every 3 hours) - can be disabled when using dedicated worker
+  const enableIoTSyncCron = String(process.env.ENABLE_IOT_SYNC_CRON || "true").toLowerCase() === "true";
+  if (enableIoTSyncCron) {
+    iotSyncCron.start();
+    console.log("✓ IoT sync cron job started (every 3 hours)");
+  } else {
+    console.log("ℹ IoT sync cron job is disabled (ENABLE_IOT_SYNC_CRON=false)");
+  }
 
   // Start server
   server.listen({port: process.env.PORT}, async (err, address) => {

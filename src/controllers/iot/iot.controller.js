@@ -358,7 +358,10 @@ const getStations = async (request, reply) => {
         -- Subquery để lấy thời gian data cuối cùng
         (SELECT MAX(date_time) FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number) as last_data_time,
         -- Subquery để lấy thời gian data đầu tiên  
-        (SELECT MIN(date_time) FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number) as first_data_time
+        (SELECT MIN(date_time) FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number) as first_data_time,
+        -- Subquery để lấy giá trị độ mặn mới nhất
+        (SELECT d.salt_value FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number AND d.salt_value IS NOT NULL ORDER BY d.date_time DESC LIMIT 1) as latest_salt_value,
+        (SELECT d.salt_unit FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number AND d.salt_value IS NOT NULL ORDER BY d.date_time DESC LIMIT 1) as latest_salt_unit
       FROM iot_system.iot_stations s
     `;
     const params = [];
