@@ -13,14 +13,56 @@ const GetSalinityPoints = async (req, reply) => {
     let result = cache.get(cacheKey);
 
     if (!result) {
-      // Optimized query với SELECT cụ thể và index
-      const dbResult = await QueryDatabase(
+      // Lấy danh sách điểm đo
+      const pointsResult = await QueryDatabase(
         `SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai" AS "MoTa"
          FROM hochiminh."DiemDoMan"
          WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
          ORDER BY "TenDiem" ASC`,
       );
-      result = dbResult.rows;
+
+      // Lấy toàn bộ dữ liệu độ mặn (sắp xếp theo ngày giảm dần)
+      const dataResult = await QueryDatabase(
+        `SELECT *
+         FROM hochiminh."DoMan"
+         ORDER BY "Ngày" DESC`,
+      );
+
+      // Xử lý dữ liệu
+      result = pointsResult.rows.map((point) => {
+        const pointData = {
+          ...point,
+          latest_value: null,
+          latest_date: null,
+          previous_value: null,
+          previous_date: null,
+        };
+
+        const kihieu = point.KiHieu;
+        let foundLatest = false;
+        let foundPrevious = false;
+
+        // Lặp qua dữ liệu độ mặn để tìm latest và previous
+        for (const record of dataResult.rows) {
+          const value = record[kihieu]; // Lấy giá trị cột tương ứng với KiHieu
+
+          if (value !== null && value !== undefined) {
+            if (!foundLatest) {
+              pointData.latest_value = value;
+              pointData.latest_date = record.Ngày;
+              foundLatest = true;
+            } else if (!foundPrevious) {
+              pointData.previous_value = value;
+              pointData.previous_date = record.Ngày;
+              foundPrevious = true;
+              break;
+            }
+          }
+        }
+
+        return pointData;
+      });
+
       cache.set(cacheKey, result);
     }
 
