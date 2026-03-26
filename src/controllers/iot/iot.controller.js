@@ -78,7 +78,7 @@ const getAllData = async (request, reply) => {
         d.daily_rainfall_status,
         -- Salt Sensor
         d.salt_value,
-        d.salt_unit,
+        '‰' AS salt_unit,
         d.salt_status,
         -- Temperature Sensor
         d.temp_value,
@@ -137,7 +137,7 @@ const getAllData = async (request, reply) => {
  * Query params:
  * - startDate: From date (YYYY-MM-DD)
  * - endDate: To date (YYYY-MM-DD)
- * - groupBy: Group results (date, none) - default: none
+ * - groupBy: Group results (none=5m, hour, day/date) - default: none
  */
 const getDataByStation = async (request, reply) => {
   try {
@@ -185,48 +185,107 @@ const getDataByStation = async (request, reply) => {
     const whereClause = `WHERE ${conditions.join(" AND ")}`;
 
     let dataQuery;
+    const normalizedGroupBy = groupBy === "date" ? "day" : groupBy;
 
-    if (groupBy === "date") {
-      // Group by date
+    if (normalizedGroupBy === "none") {
+      // none = gom theo cửa sổ đồng bộ 5 phút (00:01-00:05, 00:06-00:10, ...)
       dataQuery = `
-        SELECT 
-          DATE(date_time) as date,
-          json_agg(
-            json_build_object(
-              'time', TO_CHAR(date_time, 'HH24:MI:SS'),
-              'sensors', json_build_object(
-                'distance', json_build_object('value', distance_value, 'unit', distance_unit, 'status', distance_status),
-                'daily_rainfall', json_build_object('value', daily_rainfall_value, 'unit', daily_rainfall_unit, 'status', daily_rainfall_status),
-                'salt', json_build_object('value', salt_value, 'unit', salt_unit, 'status', salt_status),
-                'temp', json_build_object('value', temp_value, 'unit', temp_unit, 'status', temp_status),
-              )
-            ) ORDER BY date_time
-          ) as readings
+        WITH base AS (
+          SELECT
+            date_time,
+            distance_value, distance_unit,
+            daily_rainfall_value, daily_rainfall_unit,
+            salt_value, salt_unit,
+            temp_value, temp_unit,
+            CASE
+              WHEN EXTRACT(EPOCH FROM (date_time - date_trunc('hour', date_time))) = 0
+                THEN date_trunc('hour', date_time)
+              ELSE date_trunc('hour', date_time)
+                   + (CEIL(EXTRACT(EPOCH FROM (date_time - date_trunc('hour', date_time))) / 300.0) * interval '5 minute')
+            END AS sync_5m_end_time
+          FROM iot_system.iot_data
+          ${whereClause}
+        )
+        SELECT
+          sync_5m_end_time,
+          ROUND(AVG(distance_value)::numeric, 3) AS distance_value_avg,
+          MAX(distance_unit) FILTER (WHERE distance_unit IS NOT NULL) AS distance_unit,
+          CASE
+            WHEN COUNT(daily_rainfall_value) > 0 THEN ROUND(SUM(daily_rainfall_value)::numeric, 3)
+            ELSE NULL
+          END AS daily_rainfall_value_sum,
+          MAX(daily_rainfall_unit) FILTER (WHERE daily_rainfall_unit IS NOT NULL) AS daily_rainfall_unit,
+          ROUND(AVG(salt_value)::numeric, 3) AS salt_value_avg,
+          '‰' AS salt_unit,
+          ROUND(AVG(temp_value)::numeric, 3) AS temp_value_avg,
+          MAX(temp_unit) FILTER (WHERE temp_unit IS NOT NULL) AS temp_unit,
+          COUNT(*) AS records_in_bucket
+        FROM base
+        GROUP BY sync_5m_end_time
+        ORDER BY sync_5m_end_time DESC
+      `;
+    } else if (normalizedGroupBy === "hour") {
+      // Giờ theo quy ước: 00:01-01:00 là giờ 1; 01:01-02:00 là giờ 2
+      dataQuery = `
+        WITH base AS (
+          SELECT
+            date_time,
+            distance_value, distance_unit,
+            daily_rainfall_value, daily_rainfall_unit,
+            salt_value, salt_unit,
+            temp_value, temp_unit,
+            CASE
+              WHEN date_time = date_trunc('hour', date_time)
+                THEN date_trunc('hour', date_time)
+              ELSE date_trunc('hour', date_time) + interval '1 hour'
+            END AS hour_end_time
+          FROM iot_system.iot_data
+          ${whereClause}
+        )
+        SELECT
+          hour_end_time,
+          ROUND(AVG(distance_value)::numeric, 3) AS distance_value_avg,
+          MAX(distance_unit) FILTER (WHERE distance_unit IS NOT NULL) AS distance_unit,
+          CASE
+            WHEN COUNT(daily_rainfall_value) > 0 THEN ROUND(SUM(daily_rainfall_value)::numeric, 3)
+            ELSE NULL
+          END AS daily_rainfall_value_sum,
+          MAX(daily_rainfall_unit) FILTER (WHERE daily_rainfall_unit IS NOT NULL) AS daily_rainfall_unit,
+          ROUND(AVG(salt_value)::numeric, 3) AS salt_value_avg,
+          '‰' AS salt_unit,
+          ROUND(AVG(temp_value)::numeric, 3) AS temp_value_avg,
+          MAX(temp_unit) FILTER (WHERE temp_unit IS NOT NULL) AS temp_unit,
+          COUNT(*) AS records_in_bucket
+        FROM base
+        GROUP BY hour_end_time
+        ORDER BY hour_end_time DESC
+      `;
+    } else if (normalizedGroupBy === "day") {
+      dataQuery = `
+        SELECT
+          DATE(date_time) AS day,
+          ROUND(AVG(distance_value)::numeric, 3) AS distance_value_avg,
+          MAX(distance_unit) FILTER (WHERE distance_unit IS NOT NULL) AS distance_unit,
+          CASE
+            WHEN COUNT(daily_rainfall_value) > 0 THEN ROUND(SUM(daily_rainfall_value)::numeric, 3)
+            ELSE NULL
+          END AS daily_rainfall_value_sum,
+          MAX(daily_rainfall_unit) FILTER (WHERE daily_rainfall_unit IS NOT NULL) AS daily_rainfall_unit,
+          ROUND(AVG(salt_value)::numeric, 3) AS salt_value_avg,
+          '‰' AS salt_unit,
+          ROUND(AVG(temp_value)::numeric, 3) AS temp_value_avg,
+          MAX(temp_unit) FILTER (WHERE temp_unit IS NOT NULL) AS temp_unit,
+          COUNT(*) AS records_in_bucket
         FROM iot_system.iot_data
         ${whereClause}
         GROUP BY DATE(date_time)
         ORDER BY DATE(date_time) DESC
       `;
     } else {
-      // No grouping - return all data
-      dataQuery = `
-        SELECT 
-          id,
-          date_time,
-          -- Distance Sensor
-          distance_value, distance_unit, distance_status,
-          -- Daily Rainfall Sensor  
-          daily_rainfall_value, daily_rainfall_unit, daily_rainfall_status,
-          -- Salt Sensor
-          salt_value, salt_unit, salt_status,
-          -- Temperature Sensor
-          temp_value, temp_unit, temp_status,
-          updated_at,
-          deleted_at
-        FROM iot_system.iot_data
-        ${whereClause}
-        ORDER BY date_time DESC
-      `;
+      return reply.code(400).send({
+        success: false,
+        message: "Invalid groupBy. Supported values: none, hour, day, date",
+      });
     }
 
     const dataResult = await queryDatabase(dataQuery, params);
@@ -240,7 +299,7 @@ const getDataByStation = async (request, reply) => {
       filters: {
         startDate,
         endDate,
-        groupBy,
+        groupBy: normalizedGroupBy,
       },
     });
   } catch (error) {
@@ -350,19 +409,72 @@ const getStations = async (request, reply) => {
         s.frequency,
         s.time_period,
         s.note,
-        s.status,
-        s.updated_at,
-        s.deleted_at,
-        -- Subquery để đếm chính xác số records
-        (SELECT COUNT(*) FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number) as total_records,
-        -- Subquery để lấy thời gian data cuối cùng
-        (SELECT MAX(date_time) FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number) as last_data_time,
-        -- Subquery để lấy thời gian data đầu tiên  
-        (SELECT MIN(date_time) FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number) as first_data_time,
-        -- Subquery để lấy giá trị độ mặn mới nhất
-        (SELECT d.salt_value FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number AND d.salt_value IS NOT NULL ORDER BY d.date_time DESC LIMIT 1) as latest_salt_value,
-        (SELECT d.salt_unit FROM iot_system.iot_data d WHERE d.serial_number = s.serial_number AND d.salt_value IS NOT NULL ORDER BY d.date_time DESC LIMIT 1) as latest_salt_unit
+        -- Đơn vị độ mặn mới nhất
+        '‰' AS latest_salt_unit,
+        -- Mốc kết thúc của giờ mới nhất (quy ước: 00:01-01:00 là giờ 1, 01:01-02:00 là giờ 2...)
+        salt_stats.latest_hour_end_time,
+        -- Mốc kết thúc của giờ liền trước để so sánh
+        salt_stats.previous_hour_end_time,
+        -- Trung bình độ mặn của giờ mới nhất
+        salt_stats.latest_hour_avg_salt,
+        -- Trung bình độ mặn của giờ liền trước
+        salt_stats.previous_hour_avg_salt,
+        -- Ngày liền trước dùng để tính trung bình ngày
+        salt_stats.previous_day,
+        -- Trung bình độ mặn của ngày liền trước
+        salt_stats.previous_day_avg_salt
       FROM iot_system.iot_stations s
+      LEFT JOIN LATERAL (
+        SELECT
+          latest_slot.latest_hour_end_time,
+          (latest_slot.latest_hour_end_time - interval '1 hour') AS previous_hour_end_time,
+          (
+            SELECT ROUND(AVG(d1.salt_value)::numeric, 3)
+            FROM iot_system.iot_data d1
+            WHERE d1.serial_number = s.serial_number
+              AND d1.salt_value IS NOT NULL
+              AND (
+                CASE
+                  WHEN d1.date_time = date_trunc('hour', d1.date_time)
+                    THEN date_trunc('hour', d1.date_time)
+                  ELSE date_trunc('hour', d1.date_time) + interval '1 hour'
+                END
+              ) = latest_slot.latest_hour_end_time
+          ) AS latest_hour_avg_salt,
+          (
+            SELECT ROUND(AVG(d2.salt_value)::numeric, 3)
+            FROM iot_system.iot_data d2
+            WHERE d2.serial_number = s.serial_number
+              AND d2.salt_value IS NOT NULL
+              AND (
+                CASE
+                  WHEN d2.date_time = date_trunc('hour', d2.date_time)
+                    THEN date_trunc('hour', d2.date_time)
+                  ELSE date_trunc('hour', d2.date_time) + interval '1 hour'
+                END
+              ) = (latest_slot.latest_hour_end_time - interval '1 hour')
+          ) AS previous_hour_avg_salt,
+          (latest_slot.latest_hour_end_time::date - interval '1 day')::date AS previous_day,
+          (
+            SELECT ROUND(AVG(d3.salt_value)::numeric, 3)
+            FROM iot_system.iot_data d3
+            WHERE d3.serial_number = s.serial_number
+              AND d3.salt_value IS NOT NULL
+              AND d3.date_time::date = (latest_slot.latest_hour_end_time::date - interval '1 day')::date
+          ) AS previous_day_avg_salt
+        FROM (
+          SELECT MAX(
+            CASE
+              WHEN d0.date_time = date_trunc('hour', d0.date_time)
+                THEN date_trunc('hour', d0.date_time)
+              ELSE date_trunc('hour', d0.date_time) + interval '1 hour'
+            END
+          ) AS latest_hour_end_time
+          FROM iot_system.iot_data d0
+          WHERE d0.serial_number = s.serial_number
+            AND d0.salt_value IS NOT NULL
+        ) latest_slot
+      ) salt_stats ON TRUE
     `;
     const params = [];
 

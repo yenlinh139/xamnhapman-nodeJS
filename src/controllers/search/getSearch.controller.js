@@ -99,9 +99,9 @@ const GetSearchAll = async (req, reply) => {
         [decodedSearchTerm, searchPattern, limitVal],
       ),
 
-        // Query Trạm IoT
-        QueryDatabase(
-          `
+      // Query Trạm IoT
+      QueryDatabase(
+        `
           SELECT serial_number AS "SerialNumber",
                  station_name AS "StationName",
                  station_code AS "StationCode",
@@ -119,9 +119,9 @@ const GetSearchAll = async (req, reply) => {
           ORDER BY station_name
           LIMIT $4
         `,
-          [decodedSearchTerm, searchPattern, searchPattern, limitVal],
-        ),
-      ];
+        [decodedSearchTerm, searchPattern, searchPattern, limitVal],
+      ),
+    ];
     const settled = await Promise.allSettled(queryTasks);
 
     // Combine results (do not fail all when one query fails)

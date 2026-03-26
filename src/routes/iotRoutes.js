@@ -129,9 +129,9 @@ async function iotRoutes(fastify, options) {
             sensorType: {type: "string", enum: ["Salt", "Distance", "Temp", "Daily Rainfall"]},
             groupBy: {
               type: "string",
-              enum: ["date", "sensor_type", "none"],
+              enum: ["none", "hour", "day", "date"],
               default: "none",
-              description: "Group results by date or sensor type",
+              description: "Group results by 5-minute sync (none), hour, or day (date=day for compatibility)",
             },
           },
         },
