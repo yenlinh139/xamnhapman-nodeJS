@@ -105,8 +105,10 @@ const GetSearchAll = async (req, reply) => {
           SELECT serial_number AS "SerialNumber",
                  station_name AS "StationName",
                  station_code AS "StationCode",
-                 latitude AS "ViDo",
-                 longitude AS "KinhDo",
+                 latitude AS latitude,
+                 longitude AS longitude,
+                 latitude AS vido_decimal,
+                 longitude AS kinhdo_decimal,
                  station_type AS "StationType",
                  frequency AS "TanSuat",
                  time_period AS "ThoiGian",
@@ -247,7 +249,7 @@ const GetSearchDate = async (req, reply) => {
     }
 
     // Check cache
-    const cacheKey = `search_date_${parsedDate.iso}_${limit}`;
+    const cacheKey = `search_date_v4_${parsedDate.iso}_${limit}`;
     const cached = searchCache.get(cacheKey);
     if (cached) {
       return reply.code(200).send(cached);
@@ -266,14 +268,82 @@ const GetSearchDate = async (req, reply) => {
       {
         name: "ThuyVan",
         label: "hydrologyData",
-        query: `SELECT * FROM hochiminh."ThuyVan" WHERE "Ngày" = $1 LIMIT $2`,
-        params: [parsedDate.vietnam, limitVal],
+        query: `
+          SELECT *
+          FROM hochiminh."ThuyVan"
+          WHERE (
+            CASE
+              WHEN "Ngày"::text ~ '^\\d{1,2}/\\d{1,2}/\\d{4}$' THEN TO_DATE("Ngày"::text, 'DD/MM/YYYY')
+              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}$' THEN TO_DATE("Ngày"::text, 'YYYY-MM-DD')
+              WHEN "Ngày"::text ~ '^\\d{1,2}-\\d{1,2}-\\d{4}$' THEN TO_DATE("Ngày"::text, 'DD-MM-YYYY')
+              WHEN "Ngày"::text ~ '^\\d{4}/\\d{1,2}/\\d{1,2}$' THEN TO_DATE("Ngày"::text, 'YYYY/MM/DD')
+              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}[ T]\\d{1,2}:\\d{1,2}:\\d{1,2}$'
+                THEN TO_TIMESTAMP("Ngày"::text, 'YYYY-MM-DD HH24:MI:SS')::date
+              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}[ T]\\d{1,2}:\\d{1,2}$'
+                THEN TO_TIMESTAMP("Ngày"::text, 'YYYY-MM-DD HH24:MI')::date
+              ELSE NULL
+            END
+          ) = $1::date
+          LIMIT $2
+        `,
+        params: [parsedDate.iso, limitVal],
       },
       {
         name: "KhiTuong",
         label: "meteorologyData",
-        query: `SELECT * FROM hochiminh."KhiTuong" WHERE "Ngày" = $1 LIMIT $2`,
-        params: [parsedDate.vietnam, limitVal],
+        query: `
+          SELECT *
+          FROM hochiminh."KhiTuong"
+          WHERE (
+            CASE
+              WHEN "Ngày"::text ~ '^\\d{1,2}/\\d{1,2}/\\d{4}$' THEN TO_DATE("Ngày"::text, 'DD/MM/YYYY')
+              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}$' THEN TO_DATE("Ngày"::text, 'YYYY-MM-DD')
+              WHEN "Ngày"::text ~ '^\\d{1,2}-\\d{1,2}-\\d{4}$' THEN TO_DATE("Ngày"::text, 'DD-MM-YYYY')
+              WHEN "Ngày"::text ~ '^\\d{4}/\\d{1,2}/\\d{1,2}$' THEN TO_DATE("Ngày"::text, 'YYYY/MM/DD')
+              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}[ T]\\d{1,2}:\\d{1,2}:\\d{1,2}$'
+                THEN TO_TIMESTAMP("Ngày"::text, 'YYYY-MM-DD HH24:MI:SS')::date
+              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}[ T]\\d{1,2}:\\d{1,2}$'
+                THEN TO_TIMESTAMP("Ngày"::text, 'YYYY-MM-DD HH24:MI')::date
+              ELSE NULL
+            END
+          ) = $1::date
+          LIMIT $2
+        `,
+        params: [parsedDate.iso, limitVal],
+      },
+      {
+        name: "IoTData",
+        label: "iotData",
+        query: `
+          SELECT
+            d.date_time::date AS date,
+            d.serial_number,
+            s.station_name,
+            s.station_code,
+            s.latitude,
+            s.longitude,
+            s.latitude AS vido_decimal,
+            s.longitude AS kinhdo_decimal,
+            ROUND(AVG(d.distance_value)::numeric, 3) AS distance_value_avg,
+            MAX(d.distance_unit) FILTER (WHERE d.distance_unit IS NOT NULL) AS distance_unit,
+            CASE
+              WHEN COUNT(d.daily_rainfall_value) > 0 THEN ROUND(SUM(d.daily_rainfall_value)::numeric, 3)
+              ELSE NULL
+            END AS daily_rainfall_value_sum,
+            MAX(d.daily_rainfall_unit) FILTER (WHERE d.daily_rainfall_unit IS NOT NULL) AS daily_rainfall_unit,
+            ROUND(AVG(d.salt_value)::numeric, 3) AS salt_value_avg,
+            '‰' AS salt_unit,
+            ROUND(AVG(d.temp_value)::numeric, 3) AS temp_value_avg,
+            MAX(d.temp_unit) FILTER (WHERE d.temp_unit IS NOT NULL) AS temp_unit,
+            COUNT(*) AS total_records
+          FROM iot_system.iot_data d
+          LEFT JOIN iot_system.iot_stations s ON s.serial_number = d.serial_number
+          WHERE d.date_time::date = $1::date
+          GROUP BY d.date_time::date, d.serial_number, s.station_name, s.station_code, s.latitude, s.longitude
+          ORDER BY s.station_name ASC, d.serial_number ASC
+          LIMIT $2
+        `,
+        params: [parsedDate.iso, limitVal],
       },
     ];
 

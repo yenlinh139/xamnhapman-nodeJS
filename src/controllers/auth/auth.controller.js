@@ -6,19 +6,21 @@ const {compareHashPassword, hashPassword} = require("../../utils/hashBcrypt");
 const logger = require("../../loggers/loggers.config");
 const nodemailer = require("nodemailer");
 
-// Cấu hình Nodemailer để gửi email
+// Cấu hình Nodemailer để gửi email - lấy từ biến môi trường
 let transporter = nodemailer.createTransport({
-  service: "gmail", // Sử dụng Gmail, bạn có thể thay bằng dịch vụ khác
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true, // Use SSL for port 465
   auth: {
-    user: "21166139@st.hcmuaf.edu.vn", // Thay bằng email của bạn
-    pass: "ovjq aqtb spbg hllh", // Mật khẩu hoặc App Password của bạn (nếu dùng Gmail)
+    user: process.env.EMAIL || "", // Lấy từ .env - EMAIL
+    pass: process.env.EMAIL_PASSWORD || "", // Lấy từ .env - EMAIL_PASSWORD (App Password của Gmail)
   },
 });
 
 // Hàm gửi email
 function sendEmail(to, subject, htmlContent) {
   let mailOptions = {
-    from: "21166139@st.hcmuaf.edu.vn", // Người gửi
+    from: process.env.EMAIL || "noreply@xamnhapman.local", // Lấy từ .env
     to: to, // Người nhận
     subject: subject, // Tiêu đề email
     html: htmlContent, // Nội dung email
