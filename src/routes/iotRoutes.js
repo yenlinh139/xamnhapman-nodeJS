@@ -36,6 +36,57 @@ async function iotRoutes(fastify, options) {
     iotController.getAllStations,
   );
 
+  // Get one IoT station
+  fastify.get(
+    "/stations/:serialNumber",
+    {
+      schema: {
+        description: "Get one IoT station by serial number or station code",
+        tags: ["IoT Stations"],
+      },
+    },
+    iotController.getStationBySerial,
+  );
+
+  // Create IoT station
+  fastify.post(
+    "/stations",
+    {
+      onRequest: [VerifyToken],
+      schema: {
+        description: "Create a new IoT station",
+        tags: ["IoT Stations"],
+      },
+    },
+    iotController.createStation,
+  );
+
+  // Update IoT station
+  fastify.put(
+    "/stations/:serialNumber",
+    {
+      onRequest: [VerifyToken],
+      schema: {
+        description: "Update an existing IoT station",
+        tags: ["IoT Stations"],
+      },
+    },
+    iotController.updateStation,
+  );
+
+  // Delete IoT station
+  fastify.delete(
+    "/stations/:serialNumber",
+    {
+      onRequest: [VerifyToken],
+      schema: {
+        description: "Delete an IoT station",
+        tags: ["IoT Stations"],
+      },
+    },
+    iotController.deleteStation,
+  );
+
   // Get IoT statistics
   fastify.get(
     "/stats",
@@ -87,7 +138,12 @@ async function iotRoutes(fastify, options) {
             },
             startDate: {type: "string", format: "date", description: "Start date (YYYY-MM-DD)"},
             endDate: {type: "string", format: "date", description: "End date (YYYY-MM-DD)"},
-            sortBy: {type: "string", enum: ["date", "sensor_type", "value", "serial_number"], default: "date"},
+            sortBy: {
+              type: "string",
+              enum: ["date_time", "serial_number", "date"],
+              default: "date_time",
+              description: "Sort field (date_time or serial_number; date is accepted as alias)",
+            },
             sortOrder: {type: "string", enum: ["asc", "desc"], default: "desc"},
           },
         },
@@ -105,6 +161,45 @@ async function iotRoutes(fastify, options) {
       },
     },
     iotController.getAllData,
+  );
+
+  // Create IoT data row
+  fastify.post(
+    "/data",
+    {
+      onRequest: [VerifyToken],
+      schema: {
+        description: "Create one IoT data record",
+        tags: ["IoT Data"],
+      },
+    },
+    iotController.createIoTData,
+  );
+
+  // Update IoT data row
+  fastify.put(
+    "/data/:id",
+    {
+      onRequest: [VerifyToken],
+      schema: {
+        description: "Update one IoT data record by id",
+        tags: ["IoT Data"],
+      },
+    },
+    iotController.updateIoTData,
+  );
+
+  // Delete IoT data row
+  fastify.delete(
+    "/data/:id",
+    {
+      onRequest: [VerifyToken],
+      schema: {
+        description: "Delete one IoT data record by id",
+        tags: ["IoT Data"],
+      },
+    },
+    iotController.deleteIoTData,
   );
 
   // Get data by station

@@ -6,6 +6,36 @@ const NodeCache = require("node-cache");
 // Cache với TTL 5 phút cho data ít thay đổi
 const cache = new NodeCache({stdTTL: 300, checkperiod: 60});
 
+const VALID_SALINITY_STATIONS = ["CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2"];
+
+const salinityOverviewMapping = {
+  CRT: {manualCode: "CRT", displayName: "Cầu Rạch Tra"},
+  CTT: {manualCode: "CTT", displayName: "Cầu Thủ Thiêm"},
+  COT: {manualCode: "COT", displayName: "Cầu Ông Thìn"},
+  CKC: {manualCode: "CKC", displayName: "Cống Kênh C", iotStationCode: "CKC_IoT"},
+  KXAH: {manualCode: "KXAH", displayName: "Kênh Xáng An Hạ", iotStationCode: "CAH_IoT"},
+  MNB: {manualCode: "MNB", displayName: "Mũi Nhà Bè"},
+  PCL: {manualCode: "PCL", displayName: "Phà Cát Lái"},
+  KXD2: {manualCode: "KXD2", displayName: "Kênh Xáng đứng 2"},
+  CAH_IoT: {manualCode: "KXAH", displayName: "Cống An Hạ", iotStationCode: "CAH_IoT"},
+  CKC_IoT: {manualCode: "CKC", displayName: "Cống Kênh C", iotStationCode: "CKC_IoT"},
+  CVT_IoT: {displayName: "Cống Vườn Thơm", iotStationCode: "CVT_IoT"},
+};
+
+const resolveSalinityOverviewConfig = (inputCode = "") => {
+  const trimmed = inputCode.trim();
+  const upper = trimmed.toUpperCase();
+
+  if (salinityOverviewMapping[trimmed]) return salinityOverviewMapping[trimmed];
+  if (salinityOverviewMapping[upper]) return salinityOverviewMapping[upper];
+
+  return {
+    manualCode: VALID_SALINITY_STATIONS.includes(upper) ? upper : null,
+    iotStationCode: trimmed,
+    displayName: trimmed,
+  };
+};
+
 const GetSalinityPoints = async (req, reply) => {
   try {
     // Check cache first
@@ -85,6 +115,186 @@ const GetSalinityPoints = async (req, reply) => {
   }
 };
 
+const GetSalinityOverview = async (req, reply) => {
+  try {
+    const {code} = req.params;
+    const {startDate, endDate, limit = 200} = req.query;
+
+    if (!code) {
+      return reply.code(400).send({code: 400, message: "Thiếu mã trạm"});
+    }
+
+    const decodedCode = decodeURIComponent(code).trim();
+    const limitVal = Math.min(Math.max(parseInt(limit) || 200, 1), 1000);
+    const mapping = resolveSalinityOverviewConfig(decodedCode);
+    const cacheKey = `salinity_overview_${decodedCode}_${startDate || "all"}_${endDate || "all"}_${limitVal}`;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return reply.code(200).send(cached);
+    }
+
+    const manualWhere = [];
+    const manualParams = [];
+    if (mapping.manualCode) {
+      manualWhere.push(`"${mapping.manualCode}" IS NOT NULL`);
+      if (startDate) {
+        manualParams.push(startDate);
+        manualWhere.push(`"Ngày" >= $${manualParams.length}`);
+      }
+      if (endDate) {
+        manualParams.push(endDate);
+        manualWhere.push(`"Ngày" <= $${manualParams.length}`);
+      }
+    }
+
+    const iotWhere = [];
+    const iotParams = [];
+
+    let manualStation = null;
+    let manualData = [];
+    let manualSummary = {totalRecords: 0, startTime: null, endTime: null};
+
+    if (mapping.manualCode) {
+      const [manualStationResult, manualDataResult, manualCountResult] = await Promise.all([
+        QueryDatabase(
+          `
+          SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai" AS "MoTa", "TanSuat"
+          FROM hochiminh."DiemDoMan"
+          WHERE "KiHieu" = $1
+          LIMIT 1
+          `,
+          [mapping.manualCode],
+        ),
+        QueryDatabase(
+          `
+          SELECT "Ngày" AS date, "${mapping.manualCode}" AS salinity, '‰' AS unit
+          FROM hochiminh."DoMan"
+          WHERE ${manualWhere.join(" AND ")}
+          ORDER BY "Ngày" DESC
+          LIMIT $${manualParams.length + 1}
+          `,
+          [...manualParams, limitVal],
+        ),
+        QueryDatabase(
+          `
+          SELECT COUNT(*) AS total_records, MIN("Ngày") AS start_time, MAX("Ngày") AS end_time
+          FROM hochiminh."DoMan"
+          WHERE ${manualWhere.join(" AND ")}
+          `,
+          manualParams,
+        ),
+      ]);
+
+      manualStation = manualStationResult.rows[0] || null;
+      manualData = manualDataResult.rows;
+      manualSummary = {
+        totalRecords: parseInt(manualCountResult.rows[0]?.total_records || 0),
+        startTime: manualCountResult.rows[0]?.start_time || null,
+        endTime: manualCountResult.rows[0]?.end_time || null,
+      };
+    }
+
+    let iotStation = null;
+    let iotData = [];
+    let iotSummary = {totalRecords: 0, startTime: null, endTime: null};
+
+    if (mapping.iotStationCode || decodedCode) {
+      const stationLookupValue = mapping.iotStationCode || decodedCode;
+      const iotStationResult = await QueryDatabase(
+        `
+        SELECT id, station_code, serial_number, station_name, longitude, latitude, station_type, frequency, time_period, note
+        FROM iot_system.iot_stations
+        WHERE station_code = $1 OR serial_number = $1
+        LIMIT 1
+        `,
+        [stationLookupValue],
+      );
+
+      if (iotStationResult.rowCount > 0) {
+        iotStation = iotStationResult.rows[0];
+        iotWhere.push(`serial_number = $1`);
+        iotParams.push(iotStation.serial_number);
+
+        if (startDate) {
+          iotWhere.push(`date_time >= $${iotParams.length + 1}::date`);
+          iotParams.push(startDate);
+        }
+        if (endDate) {
+          iotWhere.push(`date_time <= $${iotParams.length + 1}::date + interval '1 day'`);
+          iotParams.push(endDate);
+        }
+
+        const [iotDataResult, iotCountResult] = await Promise.all([
+          QueryDatabase(
+            `
+            SELECT date_time, salt_value AS salinity, '‰' AS unit
+            FROM iot_system.iot_data
+            WHERE ${iotWhere.join(" AND ")} AND salt_value IS NOT NULL
+            ORDER BY date_time DESC
+            LIMIT $${iotParams.length + 1}
+            `,
+            [...iotParams, limitVal],
+          ),
+          QueryDatabase(
+            `
+            SELECT COUNT(*) AS total_records, MIN(date_time) AS start_time, MAX(date_time) AS end_time
+            FROM iot_system.iot_data
+            WHERE ${iotWhere.join(" AND ")} AND salt_value IS NOT NULL
+            `,
+            iotParams,
+          ),
+        ]);
+
+        iotData = iotDataResult.rows;
+        iotSummary = {
+          totalRecords: parseInt(iotCountResult.rows[0]?.total_records || 0),
+          startTime: iotCountResult.rows[0]?.start_time || null,
+          endTime: iotCountResult.rows[0]?.end_time || null,
+        };
+      }
+    }
+
+    if (!manualStation && !iotStation) {
+      return reply.code(404).send({
+        code: 404,
+        message: `Không tìm thấy dữ liệu độ mặn cho mã trạm: ${decodedCode}`,
+      });
+    }
+
+    const response = {
+      code: decodedCode,
+      displayName: manualStation?.TenDiem || iotStation?.station_name || mapping.displayName || decodedCode,
+      filters: {
+        startDate: startDate || null,
+        endDate: endDate || null,
+        limit: limitVal,
+      },
+      manual: {
+        available: !!manualStation,
+        station: manualStation,
+        total_records: manualSummary.totalRecords,
+        start_time: manualSummary.startTime,
+        end_time: manualSummary.endTime,
+        data: manualData,
+      },
+      iot: {
+        available: !!iotStation,
+        station: iotStation,
+        total_records: iotSummary.totalRecords,
+        start_time: iotSummary.startTime,
+        end_time: iotSummary.endTime,
+        data: iotData,
+      },
+    };
+
+    cache.set(cacheKey, response);
+    return reply.code(200).send(response);
+  } catch (error) {
+    logger.error("GetSalinityOverview error:", error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
 // GET /api/salinity-table?year=2007
 const GetSalinityData = async (req, reply) => {
   try {
@@ -96,8 +306,7 @@ const GetSalinityData = async (req, reply) => {
     }
 
     // Validate và sanitize tham số
-    const validStations = ["CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2"];
-    if (kihieu !== "full" && !validStations.includes(kihieu)) {
+    if (kihieu !== "full" && !VALID_SALINITY_STATIONS.includes(kihieu)) {
       return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
     }
 
@@ -288,6 +497,7 @@ const ExportSalinityDataWithRange = async (req, reply) => {
 
 module.exports = {
   GetSalinityPoints,
+  GetSalinityOverview,
   GetSalinityData,
   ExportSalinityDataToExcel,
   ExportSalinityDataWithRange,
