@@ -11,18 +11,28 @@ const dataCache = new NodeCache({stdTTL: 600, checkperiod: 60});
 const GetHydrometeorology = async (req, reply) => {
   try {
     // Check cache first
-    const cacheKey = "hydro_stations";
+    const cacheKey = "hydro_stations_v3";
     let result = stationCache.get(cacheKey);
 
     if (!result) {
       // Chỉ lấy thông tin cần thiết của trạm, không cần lấy tất cả dữ liệu
       const dbResult = await QueryDatabase(`
-        SELECT "KiHieu", "TenTram", "KinhDo", "ViDo", "PhanLoai", "PhanLoai" AS "TinhTrang"
+        SELECT "KiHieu", "KinhDo", "ViDo", "PhanLoai", "TenTram", "YeuTo", "TanSuat"
         FROM hochiminh."TramKTTV"
         WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
         ORDER BY "TenTram" ASC
       `);
-      result = dbResult.rows;
+
+      result = dbResult.rows.map((row) => ({
+        KiHieu: row.KiHieu,
+        KinhDo: row.KinhDo,
+        ViDo: row.ViDo,
+        PhanLoai: row.PhanLoai,
+        TenTram: row.TenTram,
+        YeuTo: row.YeuTo || null,
+        Tansuat: row.TanSuat || null,
+      }));
+
       stationCache.set(cacheKey, result, 3600); // Cache 1 giờ
     }
 
@@ -167,35 +177,74 @@ const GetHydrometeorologyData = async (req, reply) => {
   }
 };
 
+// Normalize text date field (D/M/YYYY or M/D/YYYY or YYYY-MM-DD) thành DATE an toàn
+// Xử lý trường hợp tháng 13 (thực ra là ngày ở vị trí 2 theo format M/D/YYYY)
+const normalizeDateExpr = (col) => `
+  CASE
+    WHEN TRIM(${col}::text) ~ '^\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}'
+      THEN TO_DATE(LEFT(REPLACE(TRIM(${col}::text), '/', '-'), 10), 'YYYY-MM-DD')
+    WHEN TRIM(${col}::text) ~ '^\\d{1,2}/\\d{1,2}/\\d{4}$'
+      THEN MAKE_DATE(
+        SPLIT_PART(TRIM(${col}::text), '/', 3)::int,
+        CASE
+          WHEN SPLIT_PART(TRIM(${col}::text), '/', 2)::int > 12
+            THEN SPLIT_PART(TRIM(${col}::text), '/', 1)::int
+          ELSE SPLIT_PART(TRIM(${col}::text), '/', 2)::int
+        END,
+        CASE
+          WHEN SPLIT_PART(TRIM(${col}::text), '/', 2)::int > 12
+            THEN SPLIT_PART(TRIM(${col}::text), '/', 2)::int
+          ELSE SPLIT_PART(TRIM(${col}::text), '/', 1)::int
+        END
+      )
+    ELSE NULL
+  END`;
+
 // API mới để lấy dữ liệu mới nhất của tất cả trạm (tối ưu cho map display)
 const GetLatestHydrometeorologyData = async (req, reply) => {
   try {
+    const ndKT = normalizeDateExpr('"Ngày"');
     const query = `
-      WITH latest_dates AS (
-        SELECT MAX("Ngày") as latest_date FROM hochiminh."KhiTuong"
-        UNION ALL
-        SELECT MAX("Ngày") as latest_date FROM hochiminh."ThuyVan"
+      WITH normalized_kt AS (
+        SELECT
+          "Ngày",
+          "R_AP", "R_BC", "R_CG", "R_CL", "R_CC",
+          "R_HM", "R_LMX", "R_LS", "R_MDC", "R_NB",
+          "R_PVC", "R_TTH", "R_TSH", "R_TD", "Ttb_TSH", "Tx_TSH", "Tm_TSH",
+          ${ndKT} AS parsed_date
+        FROM hochiminh."KhiTuong"
+      ),
+      normalized_tv AS (
+        SELECT
+          "Ngày",
+          "Htb_NB", "Hx_NB", "Hm_NB", "Htb_PA", "Hx_PA", "Hm_PA",
+          ${ndKT} AS parsed_date
+        FROM hochiminh."ThuyVan"
       ),
       max_date AS (
-        SELECT MAX(latest_date) as max_date FROM latest_dates
+        SELECT GREATEST(
+          (SELECT MAX(parsed_date) FROM normalized_kt),
+          (SELECT MAX(parsed_date) FROM normalized_tv)
+        ) AS max_date
       ),
       latest_weather AS (
-        SELECT "Ngày", "R_AP", "R_BC", "R_CG", "R_CL", "R_CC", 
-               "R_HM", "R_LMX", "R_LS", "R_MDC", "R_NB", 
-               "R_PVC", "R_TTH", "R_TSH", "R_TD", "Ttb_TSH", "Tx_TSH", "Tm_TSH"
-        FROM hochiminh."KhiTuong", max_date
-        WHERE "Ngày"::date = max_date.max_date::date
+        SELECT k."Ngày", k."R_AP", k."R_BC", k."R_CG", k."R_CL", k."R_CC",
+               k."R_HM", k."R_LMX", k."R_LS", k."R_MDC", k."R_NB",
+               k."R_PVC", k."R_TTH", k."R_TSH", k."R_TD",
+               k."Ttb_TSH", k."Tx_TSH", k."Tm_TSH"
+        FROM normalized_kt k, max_date
+        WHERE k.parsed_date = max_date.max_date
       ),
       latest_hydro AS (
-        SELECT "Ngày", "Htb_NB", "Hx_NB", "Hm_NB", "Htb_PA", "Hx_PA", "Hm_PA"
-        FROM hochiminh."ThuyVan", max_date
-        WHERE "Ngày"::date = max_date.max_date::date
+        SELECT t."Ngày", t."Htb_NB", t."Hx_NB", t."Hm_NB", t."Htb_PA", t."Hx_PA", t."Hm_PA"
+        FROM normalized_tv t, max_date
+        WHERE t.parsed_date = max_date.max_date
       )
-      SELECT 
-        COALESCE(w."Ngày", h."Ngày") as "Ngày",
+      SELECT
+        COALESCE(w."Ngày", h."Ngày") AS "Ngày",
         w."R_AP", w."R_BC", w."R_CG", w."R_CL", w."R_CC",
         w."R_HM", w."R_LMX", w."R_LS", w."R_MDC", w."R_NB",
-        w."R_PVC", w."R_TTH", w."R_TSH", w."R_TD", 
+        w."R_PVC", w."R_TTH", w."R_TSH", w."R_TD",
         w."Ttb_TSH", w."Tx_TSH", w."Tm_TSH",
         h."Htb_NB", h."Hx_NB", h."Hm_NB", h."Htb_PA", h."Hx_PA", h."Hm_PA"
       FROM latest_weather w
