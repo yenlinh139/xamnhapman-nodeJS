@@ -16,6 +16,7 @@ const {
 } = require("../controllers/feedback/feedbackStats.controller");
 const {
   GetSalinityPoints,
+  GetSalinityOverview,
   GetSalinityData,
   ExportSalinityDataToExcel,
   ExportSalinityDataWithRange,
@@ -94,6 +95,7 @@ const router = (router, opts, next) => {
 
   //salinity
   router.get("/salinity-points", GetSalinityPoints);
+  router.get("/salinity-overview/:code", GetSalinityOverview);
   router.get("/salinity-data/:kihieu", GetSalinityData);
   router.get("/salinity-export/:kihieu", ExportSalinityDataToExcel);
   router.post("/salinity-export", ExportSalinityDataWithRange);

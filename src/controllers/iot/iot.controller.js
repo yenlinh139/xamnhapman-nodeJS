@@ -386,6 +386,342 @@ const manualSync = async (request, reply) => {
   }
 };
 
+const getStationBySerial = async (request, reply) => {
+  try {
+    const {serialNumber} = request.params;
+
+    const query = `
+      SELECT
+        s.id,
+        s.station_code,
+        s.serial_number,
+        s.station_name,
+        s.longitude,
+        s.latitude,
+        s.station_type,
+        s.frequency,
+        s.time_period,
+        s.note,
+        s.status,
+        COALESCE(iot_counts.total_records, 0) AS total_records,
+        iot_counts.start_time,
+        iot_counts.end_time
+      FROM iot_system.iot_stations s
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) AS total_records,
+          MIN(d.date_time) AS start_time,
+          MAX(d.date_time) AS end_time
+        FROM iot_system.iot_data d
+        WHERE d.serial_number = s.serial_number
+      ) iot_counts ON TRUE
+      WHERE s.serial_number = $1 OR s.station_code = $1
+      LIMIT 1
+    `;
+
+    const result = await queryDatabase(query, [serialNumber]);
+    if (result.rows.length === 0) {
+      return reply.code(404).send({success: false, message: `Station ${serialNumber} not found`});
+    }
+
+    return reply.code(200).send({success: true, data: result.rows[0]});
+  } catch (error) {
+    request.log.error("Error getting station by serial:", error);
+    return reply.code(500).send({success: false, message: "Failed to get station", error: error.message});
+  }
+};
+
+const createStation = async (request, reply) => {
+  try {
+    const {
+      station_code = null,
+      serial_number,
+      station_name,
+      longitude = null,
+      latitude = null,
+      station_type = "Trạm IoT",
+      frequency = "5 phút",
+      time_period = null,
+      note = "",
+      status = "active",
+    } = request.body || {};
+
+    if (!serial_number || !station_name) {
+      return reply.code(400).send({
+        success: false,
+        message: "serial_number và station_name là bắt buộc",
+      });
+    }
+
+    const result = await queryDatabase(
+      `
+      INSERT INTO iot_system.iot_stations (
+        station_code, serial_number, station_name, longitude, latitude,
+        station_type, frequency, time_period, note, status, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
+      RETURNING *
+      `,
+      [station_code, serial_number, station_name, longitude, latitude, station_type, frequency, time_period, note, status],
+    );
+
+    return reply.code(201).send({
+      success: true,
+      message: "IoT station created successfully",
+      data: result.rows[0],
+    });
+  } catch (error) {
+    request.log.error("Error creating IoT station:", error);
+    const message = error.code === "23505" ? "serial_number đã tồn tại" : "Failed to create IoT station";
+    const statusCode = error.code === "23505" ? 409 : 500;
+    return reply.code(statusCode).send({success: false, message, error: error.message});
+  }
+};
+
+const updateStation = async (request, reply) => {
+  try {
+    const {serialNumber} = request.params;
+    const allowedFields = [
+      "station_code",
+      "serial_number",
+      "station_name",
+      "longitude",
+      "latitude",
+      "station_type",
+      "frequency",
+      "time_period",
+      "note",
+      "status",
+    ];
+
+    const updates = [];
+    const params = [];
+
+    allowedFields.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(request.body || {}, field)) {
+        params.push(request.body[field]);
+        updates.push(`${field} = $${params.length}`);
+      }
+    });
+
+    if (updates.length === 0) {
+      return reply.code(400).send({success: false, message: "Không có dữ liệu để cập nhật"});
+    }
+
+    params.push(serialNumber);
+    const result = await queryDatabase(
+      `
+      UPDATE iot_system.iot_stations
+      SET ${updates.join(", ")}, updated_at = CURRENT_TIMESTAMP
+      WHERE serial_number = $${params.length} OR station_code = $${params.length}
+      RETURNING *
+      `,
+      params,
+    );
+
+    if (result.rows.length === 0) {
+      return reply.code(404).send({success: false, message: `Station ${serialNumber} not found`});
+    }
+
+    return reply.code(200).send({
+      success: true,
+      message: "IoT station updated successfully",
+      data: result.rows[0],
+    });
+  } catch (error) {
+    request.log.error("Error updating IoT station:", error);
+    const message = error.code === "23505" ? "serial_number đã tồn tại" : "Failed to update IoT station";
+    const statusCode = error.code === "23505" ? 409 : 500;
+    return reply.code(statusCode).send({success: false, message, error: error.message});
+  }
+};
+
+const deleteStation = async (request, reply) => {
+  try {
+    const {serialNumber} = request.params;
+
+    const result = await queryDatabase(
+      `
+      DELETE FROM iot_system.iot_stations
+      WHERE serial_number = $1 OR station_code = $1
+      RETURNING id, station_code, serial_number, station_name
+      `,
+      [serialNumber],
+    );
+
+    if (result.rows.length === 0) {
+      return reply.code(404).send({success: false, message: `Station ${serialNumber} not found`});
+    }
+
+    return reply.code(200).send({
+      success: true,
+      message: "IoT station deleted successfully",
+      data: result.rows[0],
+    });
+  } catch (error) {
+    request.log.error("Error deleting IoT station:", error);
+    return reply.code(500).send({success: false, message: "Failed to delete IoT station", error: error.message});
+  }
+};
+
+const createIoTData = async (request, reply) => {
+  try {
+    const {
+      serial_number,
+      date_time,
+      distance_value = null,
+      distance_unit = "m",
+      distance_status = null,
+      daily_rainfall_value = null,
+      daily_rainfall_unit = "mm",
+      daily_rainfall_status = null,
+      salt_value = null,
+      salt_unit = "ppt",
+      salt_status = null,
+      temp_value = null,
+      temp_unit = "°C",
+      temp_status = null,
+    } = request.body || {};
+
+    if (!serial_number || !date_time) {
+      return reply.code(400).send({success: false, message: "serial_number và date_time là bắt buộc"});
+    }
+
+    const stationCheck = await queryDatabase(`SELECT serial_number FROM iot_system.iot_stations WHERE serial_number = $1`, [serial_number]);
+    if (stationCheck.rows.length === 0) {
+      return reply.code(404).send({success: false, message: `Station ${serial_number} not found`});
+    }
+
+    const result = await queryDatabase(
+      `
+      INSERT INTO iot_system.iot_data (
+        serial_number, date_time,
+        distance_value, distance_unit, distance_status,
+        daily_rainfall_value, daily_rainfall_unit, daily_rainfall_status,
+        salt_value, salt_unit, salt_status,
+        temp_value, temp_unit, temp_status,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+      RETURNING *
+      `,
+      [
+        serial_number,
+        date_time,
+        distance_value,
+        distance_unit,
+        distance_status,
+        daily_rainfall_value,
+        daily_rainfall_unit,
+        daily_rainfall_status,
+        salt_value,
+        salt_unit,
+        salt_status,
+        temp_value,
+        temp_unit,
+        temp_status,
+      ],
+    );
+
+    return reply.code(201).send({
+      success: true,
+      message: "IoT data created successfully",
+      data: result.rows[0],
+    });
+  } catch (error) {
+    request.log.error("Error creating IoT data:", error);
+    const message = error.code === "23505" ? "Bản ghi serial_number + date_time đã tồn tại" : "Failed to create IoT data";
+    const statusCode = error.code === "23505" ? 409 : 500;
+    return reply.code(statusCode).send({success: false, message, error: error.message});
+  }
+};
+
+const updateIoTData = async (request, reply) => {
+  try {
+    const {id} = request.params;
+    const allowedFields = [
+      "serial_number",
+      "date_time",
+      "distance_value",
+      "distance_unit",
+      "distance_status",
+      "daily_rainfall_value",
+      "daily_rainfall_unit",
+      "daily_rainfall_status",
+      "salt_value",
+      "salt_unit",
+      "salt_status",
+      "temp_value",
+      "temp_unit",
+      "temp_status",
+    ];
+
+    const updates = [];
+    const params = [];
+
+    allowedFields.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(request.body || {}, field)) {
+        params.push(request.body[field]);
+        updates.push(`${field} = $${params.length}`);
+      }
+    });
+
+    if (updates.length === 0) {
+      return reply.code(400).send({success: false, message: "Không có dữ liệu để cập nhật"});
+    }
+
+    params.push(id);
+    const result = await queryDatabase(
+      `
+      UPDATE iot_system.iot_data
+      SET ${updates.join(", ")}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $${params.length}
+      RETURNING *
+      `,
+      params,
+    );
+
+    if (result.rows.length === 0) {
+      return reply.code(404).send({success: false, message: `IoT data id ${id} not found`});
+    }
+
+    return reply.code(200).send({
+      success: true,
+      message: "IoT data updated successfully",
+      data: result.rows[0],
+    });
+  } catch (error) {
+    request.log.error("Error updating IoT data:", error);
+    const message = error.code === "23505" ? "Bản ghi serial_number + date_time đã tồn tại" : "Failed to update IoT data";
+    const statusCode = error.code === "23505" ? 409 : 500;
+    return reply.code(statusCode).send({success: false, message, error: error.message});
+  }
+};
+
+const deleteIoTData = async (request, reply) => {
+  try {
+    const {id} = request.params;
+
+    const result = await queryDatabase(
+      `DELETE FROM iot_system.iot_data WHERE id = $1 RETURNING id, serial_number, date_time`,
+      [id],
+    );
+
+    if (result.rows.length === 0) {
+      return reply.code(404).send({success: false, message: `IoT data id ${id} not found`});
+    }
+
+    return reply.code(200).send({
+      success: true,
+      message: "IoT data deleted successfully",
+      data: result.rows[0],
+    });
+  } catch (error) {
+    request.log.error("Error deleting IoT data:", error);
+    return reply.code(500).send({success: false, message: "Failed to delete IoT data", error: error.message});
+  }
+};
+
 /**
  * GET /api/iot/stations
  * Get all stations with data summary
@@ -752,9 +1088,16 @@ const getHealthCheck = async (request, reply) => {
 module.exports = {
   getAllData,
   getDataByStation,
+  createIoTData,
+  updateIoTData,
+  deleteIoTData,
   manualSync,
   getStations,
   getAllStations: getStations, // Alias cho tương thích
+  getStationBySerial,
+  createStation,
+  updateStation,
+  deleteStation,
   getSyncLogs,
   getStats,
   getHealthCheck,
