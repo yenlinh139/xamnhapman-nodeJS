@@ -5,6 +5,22 @@ const NodeCache = require("node-cache");
 // Cache cho search results với TTL 30 phút
 const searchCache = new NodeCache({stdTTL: 1800, checkperiod: 300});
 
+const VIETNAMESE_FROM =
+  "áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ";
+const VIETNAMESE_TO =
+  "aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiioooooooooooooooooouuuuuuuuuuuyyyyydAAAAAAAAAAAAAAAAAEEEEEEEEEEEIIIIIOOOOOOOOOOOOOOOOOOUUUUUUUUUUUYYYYYD";
+
+const normalizeVietnamese = (text) => {
+  if (!text) return "";
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
+};
+
+const normalizeSqlExpr = (columnName) => `LOWER(TRANSLATE(${columnName}, '${VIETNAMESE_FROM}', '${VIETNAMESE_TO}'))`;
+
 const GetSearchAll = async (req, reply) => {
   try {
     const {id} = req.params;
@@ -20,8 +36,10 @@ const GetSearchAll = async (req, reply) => {
       return reply.code(400).send({code: 400, message: "Search term không được rỗng"});
     }
 
+    const normalizedSearchTerm = normalizeVietnamese(decodedSearchTerm).toLowerCase();
+
     // Check cache
-    const cacheKey = `search_all_${decodedSearchTerm}_${limit}`;
+    const cacheKey = `search_all_${normalizedSearchTerm}_${limit}`;
     const cached = searchCache.get(cacheKey);
     if (cached) {
       console.log(`🎯 Cache hit for search: "${decodedSearchTerm}"`);
@@ -32,8 +50,14 @@ const GetSearchAll = async (req, reply) => {
     console.log(`🔍 Searching for: "${decodedSearchTerm}" (limit: ${limitVal})`);
     let results = [];
 
-    // Tìm kiếm đơn giản không dùng unaccent để tránh lỗi database
-    const searchPattern = `%${decodedSearchTerm}%`;
+    // Tìm kiếm không dấu và không phân biệt hoa thường
+    const searchPattern = `%${normalizedSearchTerm}%`;
+    const tenHuyenExpr = normalizeSqlExpr('"tenHuyen"');
+    const tenXaExpr = normalizeSqlExpr('"tenXa"');
+    const tenDiemExpr = normalizeSqlExpr('"TenDiem"');
+    const tenTramExpr = normalizeSqlExpr('"TenTram"');
+    const stationNameExpr = normalizeSqlExpr("station_name");
+    const stationCodeExpr = normalizeSqlExpr("station_code");
 
     const queryTasks = [
       // Query Huyện
@@ -46,7 +70,7 @@ const GetSearchAll = async (req, reply) => {
                ST_AsGeoJSON(geom)::json AS geom,
                'huyen' AS type
         FROM hochiminh."DiaPhanHuyen"
-        WHERE "maHuyen" = $1 OR LOWER("tenHuyen") LIKE LOWER($2)
+        WHERE "maHuyen" = $1 OR ${tenHuyenExpr} LIKE $2
         ORDER BY "tenHuyen"
         LIMIT $3
       `,
@@ -67,8 +91,8 @@ const GetSearchAll = async (req, reply) => {
                'xa' AS type
         FROM hochiminh."DiaPhanXa"
         WHERE "maXa" = $1 OR "maHuyen" = $1 OR
-              LOWER("tenXa") LIKE LOWER($2) OR
-              LOWER("tenHuyen") LIKE LOWER($2)
+            ${tenXaExpr} LIKE $2 OR
+            ${tenHuyenExpr} LIKE $2
         ORDER BY "tenXa", "tenHuyen"
         LIMIT $3
       `,
@@ -80,7 +104,7 @@ const GetSearchAll = async (req, reply) => {
         `
         SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai", "ThoiGian", "TanSuat", 'diem_do_man' AS type
         FROM hochiminh."DiemDoMan"
-        WHERE "KiHieu" = $1 OR LOWER("TenDiem") LIKE LOWER($2)
+        WHERE "KiHieu" = $1 OR ${tenDiemExpr} LIKE $2
         ORDER BY "TenDiem"
         LIMIT $3
       `,
@@ -92,7 +116,7 @@ const GetSearchAll = async (req, reply) => {
         `
         SELECT "KiHieu", "TenTram", "KinhDo", "ViDo", "PhanLoai" AS "LoaiTram", 'khi_tuong_thuy_van' AS type
         FROM hochiminh."TramKTTV"
-        WHERE "KiHieu" = $1 OR LOWER("TenTram") LIKE LOWER($2)
+        WHERE "KiHieu" = $1 OR ${tenTramExpr} LIKE $2
         ORDER BY "TenTram"
         LIMIT $3
       `,
@@ -116,8 +140,8 @@ const GetSearchAll = async (req, reply) => {
                  'iot_station' AS type
           FROM iot_system.iot_stations
           WHERE serial_number = $1
-             OR LOWER(station_name) LIKE LOWER($2)
-             OR LOWER(station_code) LIKE LOWER($3)
+             OR ${stationNameExpr} LIKE $2
+             OR ${stationCodeExpr} LIKE $3
           ORDER BY station_name
           LIMIT $4
         `,
@@ -176,6 +200,121 @@ const GetAllDistricts = async (req, reply) => {
   } catch (error) {
     logger.error(error);
     return reply.code(500).send({code: 500, message: "Lỗi máy chủ."});
+  }
+};
+
+const GetAdministrativeDistricts = async (req, reply) => {
+  try {
+    const cacheKey = "administrative_districts_v1";
+    const cached = searchCache.get(cacheKey);
+    if (cached) {
+      return reply.code(200).send(cached);
+    }
+
+    const result = await QueryDatabase(`
+      SELECT "maHuyen", "tenHuyen"
+      FROM hochiminh."DiaPhanHuyen"
+      WHERE "maHuyen" IS NOT NULL AND "tenHuyen" IS NOT NULL
+      ORDER BY "tenHuyen" ASC
+    `);
+
+    searchCache.set(cacheKey, result.rows, 1800);
+    return reply.code(200).send(result.rows);
+  } catch (error) {
+    logger.error("GetAdministrativeDistricts error:", error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
+const GetAdministrativeCommunesByDistrict = async (req, reply) => {
+  try {
+    const {maHuyen} = req.params;
+
+    if (!maHuyen) {
+      return reply.code(400).send({code: 400, message: "Thiếu mã huyện"});
+    }
+
+    const cacheKey = `administrative_communes_${maHuyen}`;
+    const cached = searchCache.get(cacheKey);
+    if (cached) {
+      return reply.code(200).send(cached);
+    }
+
+    const districtResult = await QueryDatabase(
+      `
+      SELECT "maHuyen", "tenHuyen", ST_AsGeoJSON(geom)::json AS geom
+      FROM hochiminh."DiaPhanHuyen"
+      WHERE "maHuyen" = $1
+      LIMIT 1
+      `,
+      [maHuyen],
+    );
+
+    if (districtResult.rowCount === 0) {
+      return reply.code(404).send({code: 404, message: `Không tìm thấy huyện với mã: ${maHuyen}`});
+    }
+
+    const communesResult = await QueryDatabase(
+      `
+      SELECT "maXa", "tenXa"
+      FROM hochiminh."DiaPhanXa"
+      WHERE "maHuyen" = $1
+      ORDER BY "tenXa" ASC
+      `,
+      [maHuyen],
+    );
+
+    const district = districtResult.rows[0];
+    const response = {
+      maHuyen: district.maHuyen,
+      tenHuyen: district.tenHuyen,
+      geom: district.geom,
+      communes: communesResult.rows,
+      totalCommunes: communesResult.rowCount,
+    };
+
+    searchCache.set(cacheKey, response, 1800);
+    return reply.code(200).send(response);
+  } catch (error) {
+    logger.error("GetAdministrativeCommunesByDistrict error:", error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
+const GetAdministrativeCommuneByCode = async (req, reply) => {
+  try {
+    const {maXa} = req.params;
+
+    if (!maXa) {
+      return reply.code(400).send({code: 400, message: "Thiếu mã xã"});
+    }
+
+    const cacheKey = `administrative_commune_${maXa}`;
+    const cached = searchCache.get(cacheKey);
+    if (cached) {
+      return reply.code(200).send(cached);
+    }
+
+    const result = await QueryDatabase(
+      `
+      SELECT "maXa", "tenXa", "maHuyen", "tenHuyen", ST_AsGeoJSON(geom)::json AS geom
+      FROM hochiminh."DiaPhanXa"
+      WHERE "maXa" = $1
+      LIMIT 1
+      `,
+      [maXa],
+    );
+
+    if (result.rowCount === 0) {
+      return reply.code(404).send({code: 404, message: `Không tìm thấy xã với mã: ${maXa}`});
+    }
+
+    const response = result.rows[0];
+    searchCache.set(cacheKey, response, 1800);
+    return reply.code(200).send(response);
+  } catch (error) {
+    logger.error("GetAdministrativeCommuneByCode error:", error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
   }
 };
 
@@ -249,13 +388,52 @@ const GetSearchDate = async (req, reply) => {
     }
 
     // Check cache
-    const cacheKey = `search_date_v4_${parsedDate.iso}_${limit}`;
+    const cacheKey = `search_date_v5_${parsedDate.iso}_${limit}`;
     const cached = searchCache.get(cacheKey);
     if (cached) {
       return reply.code(200).send(cached);
     }
 
     const limitVal = Math.min(parseInt(limit), 500); // Max 500 records per table
+
+    // Chuẩn hóa ngày từ nhiều định dạng text/date khác nhau trong DB
+    const normalizedNgayExpr = `
+      CASE
+        WHEN "Ngày" IS NULL THEN NULL
+        WHEN TRIM("Ngày"::text) ~ '^\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}([ T]\\d{1,2}:\\d{1,2}(:\\d{1,2})?)?$'
+          THEN TO_DATE(
+            REPLACE(
+              SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1),
+              '/',
+              '-'
+            ),
+            'YYYY-MM-DD'
+          )
+        WHEN REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/') ~ '^\\d{1,2}/\\d{1,2}/\\d{4}$'
+          THEN MAKE_DATE(
+            SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 3)::int,
+            CASE
+              WHEN SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 1)::int > 12
+                AND SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 2)::int <= 12
+                THEN SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 2)::int
+              WHEN SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 2)::int > 12
+                AND SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 1)::int <= 12
+                THEN SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 1)::int
+              ELSE SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 2)::int
+            END,
+            CASE
+              WHEN SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 1)::int > 12
+                AND SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 2)::int <= 12
+                THEN SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 1)::int
+              WHEN SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 2)::int > 12
+                AND SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 1)::int <= 12
+                THEN SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 2)::int
+              ELSE SPLIT_PART(REPLACE(SPLIT_PART(REPLACE(TRIM("Ngày"::text), 'T', ' '), ' ', 1), '-', '/'), '/', 1)::int
+            END
+          )
+        ELSE NULL
+      END
+    `;
 
     // Định nghĩa tables với format date tương ứng
     const tableQueries = [
@@ -271,19 +449,7 @@ const GetSearchDate = async (req, reply) => {
         query: `
           SELECT *
           FROM hochiminh."ThuyVan"
-          WHERE (
-            CASE
-              WHEN "Ngày"::text ~ '^\\d{1,2}/\\d{1,2}/\\d{4}$' THEN TO_DATE("Ngày"::text, 'DD/MM/YYYY')
-              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}$' THEN TO_DATE("Ngày"::text, 'YYYY-MM-DD')
-              WHEN "Ngày"::text ~ '^\\d{1,2}-\\d{1,2}-\\d{4}$' THEN TO_DATE("Ngày"::text, 'DD-MM-YYYY')
-              WHEN "Ngày"::text ~ '^\\d{4}/\\d{1,2}/\\d{1,2}$' THEN TO_DATE("Ngày"::text, 'YYYY/MM/DD')
-              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}[ T]\\d{1,2}:\\d{1,2}:\\d{1,2}$'
-                THEN TO_TIMESTAMP("Ngày"::text, 'YYYY-MM-DD HH24:MI:SS')::date
-              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}[ T]\\d{1,2}:\\d{1,2}$'
-                THEN TO_TIMESTAMP("Ngày"::text, 'YYYY-MM-DD HH24:MI')::date
-              ELSE NULL
-            END
-          ) = $1::date
+          WHERE (${normalizedNgayExpr}) = $1::date
           LIMIT $2
         `,
         params: [parsedDate.iso, limitVal],
@@ -294,19 +460,7 @@ const GetSearchDate = async (req, reply) => {
         query: `
           SELECT *
           FROM hochiminh."KhiTuong"
-          WHERE (
-            CASE
-              WHEN "Ngày"::text ~ '^\\d{1,2}/\\d{1,2}/\\d{4}$' THEN TO_DATE("Ngày"::text, 'DD/MM/YYYY')
-              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}$' THEN TO_DATE("Ngày"::text, 'YYYY-MM-DD')
-              WHEN "Ngày"::text ~ '^\\d{1,2}-\\d{1,2}-\\d{4}$' THEN TO_DATE("Ngày"::text, 'DD-MM-YYYY')
-              WHEN "Ngày"::text ~ '^\\d{4}/\\d{1,2}/\\d{1,2}$' THEN TO_DATE("Ngày"::text, 'YYYY/MM/DD')
-              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}[ T]\\d{1,2}:\\d{1,2}:\\d{1,2}$'
-                THEN TO_TIMESTAMP("Ngày"::text, 'YYYY-MM-DD HH24:MI:SS')::date
-              WHEN "Ngày"::text ~ '^\\d{4}-\\d{1,2}-\\d{1,2}[ T]\\d{1,2}:\\d{1,2}$'
-                THEN TO_TIMESTAMP("Ngày"::text, 'YYYY-MM-DD HH24:MI')::date
-              ELSE NULL
-            END
-          ) = $1::date
+          WHERE (${normalizedNgayExpr}) = $1::date
           LIMIT $2
         `,
         params: [parsedDate.iso, limitVal],
@@ -525,6 +679,9 @@ const GetStationPositionHydrometeorology = async (req, reply) => {
 module.exports = {
   GetSearchAll,
   GetAllDistricts,
+  GetAdministrativeDistricts,
+  GetAdministrativeCommunesByDistrict,
+  GetAdministrativeCommuneByCode,
   GetSearchDate,
   GetStationPositionSalinity,
   GetStationPositionHydrometeorology,

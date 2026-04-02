@@ -409,6 +409,9 @@ const getStations = async (request, reply) => {
         s.frequency,
         s.time_period,
         s.note,
+        COALESCE(iot_counts.total_records, 0) AS total_records,
+        iot_counts.start_time,
+        iot_counts.end_time,
         -- Đơn vị độ mặn mới nhất
         '‰' AS latest_salt_unit,
         -- Mốc kết thúc của giờ mới nhất (quy ước: 00:01-01:00 là giờ 1, 01:01-02:00 là giờ 2...)
@@ -424,6 +427,14 @@ const getStations = async (request, reply) => {
         -- Trung bình độ mặn của ngày liền trước
         salt_stats.previous_day_avg_salt
       FROM iot_system.iot_stations s
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) AS total_records,
+          MIN(d_count.date_time) AS start_time,
+          MAX(d_count.date_time) AS end_time
+        FROM iot_system.iot_data d_count
+        WHERE d_count.serial_number = s.serial_number
+      ) iot_counts ON TRUE
       LEFT JOIN LATERAL (
         SELECT
           latest_slot.latest_hour_end_time,

@@ -9,13 +9,13 @@ const cache = new NodeCache({stdTTL: 300, checkperiod: 60});
 const GetSalinityPoints = async (req, reply) => {
   try {
     // Check cache first
-    const cacheKey = "salinity_points";
+    const cacheKey = "salinity_points_v2";
     let result = cache.get(cacheKey);
 
     if (!result) {
       // Lấy danh sách điểm đo
       const pointsResult = await QueryDatabase(
-        `SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai" AS "MoTa"
+        `SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai" AS "MoTa", "TanSuat"
          FROM hochiminh."DiemDoMan"
          WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
          ORDER BY "TenDiem" ASC`,
@@ -28,10 +28,22 @@ const GetSalinityPoints = async (req, reply) => {
          ORDER BY "Ngày" DESC`,
       );
 
+      // Lấy khoảng ngày dữ liệu trong bảng
+      const rangeResult = await QueryDatabase(
+        `SELECT MIN("Ngày") AS start_date, MAX("Ngày") AS end_date
+         FROM hochiminh."DoMan"`,
+      );
+      const startDate = rangeResult.rows[0]?.start_date || null;
+      const endDate = rangeResult.rows[0]?.end_date || null;
+      const totalRecords = dataResult.rowCount || 0;
+
       // Xử lý dữ liệu
       result = pointsResult.rows.map((point) => {
         const pointData = {
           ...point,
+          start_date: startDate,
+          end_date: endDate,
+          total_records: totalRecords,
           latest_value: null,
           latest_date: null,
           previous_value: null,

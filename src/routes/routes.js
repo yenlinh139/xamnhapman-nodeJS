@@ -31,6 +31,9 @@ const {GetDailySalinityReportData, ExportSalinityReportPDF} = require("../contro
 const {
   GetSearchAll,
   GetAllDistricts,
+  GetAdministrativeDistricts,
+  GetAdministrativeCommunesByDistrict,
+  GetAdministrativeCommuneByCode,
   GetSearchDate,
   GetStationPositionSalinity,
   GetStationPositionHydrometeorology,
@@ -113,6 +116,9 @@ const router = (router, opts, next) => {
   //search
   router.get("/search/:id", GetSearchAll);
   router.get("/districts", GetAllDistricts);
+  router.get("/administrative/districts", GetAdministrativeDistricts);
+  router.get("/administrative/communes/:maHuyen", GetAdministrativeCommunesByDistrict);
+  router.get("/administrative/commune/:maXa", GetAdministrativeCommuneByCode);
   router.get("/search-date/:id", GetSearchDate);
   router.get("/station-position-salinity/:kihieu", GetStationPositionSalinity);
   router.get("/station-position-hydrometeorology/:code", GetStationPositionHydrometeorology);
