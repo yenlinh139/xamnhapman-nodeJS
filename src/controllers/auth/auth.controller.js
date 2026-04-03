@@ -18,7 +18,15 @@ let transporter = nodemailer.createTransport({
 });
 
 // Hàm gửi email
+function isEmailConfigured() {
+  return Boolean(String(process.env.EMAIL || "").trim() && String(process.env.EMAIL_PASSWORD || "").trim());
+}
+
 function sendEmail(to, subject, htmlContent) {
+  if (!isEmailConfigured()) {
+    throw new Error("Email service is not configured");
+  }
+
   let mailOptions = {
     from: process.env.EMAIL || "noreply@xamnhapman.local", // Lấy từ .env
     to: to, // Người nhận
@@ -32,40 +40,46 @@ function sendEmail(to, subject, htmlContent) {
 const SignUp = async (req, res) => {
   try {
     if (!req.body) {
-      res.status(400).send({status: 400, message: "Missing req.body data"});
+      return res.status(400).send({status: 400, message: "Missing req.body data"});
     }
 
-    const {name, email, password} = req.body;
-
-    const escapedEmail = escape(email);
-    const escapedName = escape(name);
-    const escapedPassword = escape(password);
+    const rawName = req.body.name;
+    const rawEmail = req.body.email;
+    const rawPassword = req.body.password || req.body.pswd;
 
     // Check email, user Not Null
-    if (!name || !email || !password) {
-      res.status(400);
-      return {code: 400, message: "Missing required fields"};
+    if (!rawName || !rawEmail || !rawPassword) {
+      return res.status(400).send({code: 400, message: "Missing required fields"});
     }
 
+    const escapedEmail = escape(String(rawEmail).trim());
+    const escapedName = escape(String(rawName).trim());
+    const escapedPassword = escape(String(rawPassword));
+
     // Check if the email already exists
-    const checkEmailSql = `SELECT * FROM "users" WHERE email = '${escapedEmail}'`;
-    const existingUser = await QueryDatabase(checkEmailSql);
+    const existingUser = await QueryDatabase(`SELECT * FROM "users" WHERE email = $1`, [escapedEmail]);
     if (existingUser.rows.length > 0) {
-      res.status(409); // Conflict status code
-      return {code: 409, message: "Email already exists"};
+      return res.status(409).send({code: 409, message: "Email already exists"});
+    }
+
+    if (!isEmailConfigured()) {
+      return res.status(500).send({
+        code: 500,
+        message: "Email service is not configured. Please contact the administrator.",
+      });
     }
 
     const hashedPassword = await hashPassword(escapedPassword);
 
     const insertUserSql = `
       INSERT INTO "users" (name, email, password, role, email_verified)
-      VALUES ('${escapedName}', '${escapedEmail}', '${hashedPassword}', '${0}', '${false}')
+      VALUES ($1, $2, $3, $4, $5)
     `;
-    await QueryDatabase(insertUserSql);
+    await QueryDatabase(insertUserSql, [escapedName, escapedEmail, hashedPassword, 0, false]);
 
     // Mã hóa email trước khi đưa vào URL
     const encodedEmail = encodeURIComponent(escapedEmail); // Mã hóa email
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost";
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     const verifyUrl = `${frontendUrl}/verify-email/${encodedEmail}`;
 
     // Gửi email xác nhận sau khi đăng ký thành công
@@ -168,15 +182,29 @@ const SignUp = async (req, res) => {
     </html>
     `;
 
-    await sendEmail(escapedEmail, subject, htmlContent);
+    try {
+      await sendEmail(escapedEmail, subject, htmlContent);
+    } catch (mailError) {
+      logger.error(mailError);
+      console.error("Send verification email failed :: ", mailError);
+      await QueryDatabase(`DELETE FROM "users" WHERE email = $1`, [escapedEmail]);
+      return res.status(502).send({
+        code: 502,
+        message: "Không thể gửi email xác thực. Vui lòng thử lại sau.",
+      });
+    }
 
     // Trả về phản hồi sau khi đăng ký thành công
-    return {code: 201, message: "Created account successfully"};
+    return res.status(201).send({
+      code: 201,
+      message: "Created account successfully. Please verify your email.",
+      emailSent: true,
+      verifyUrl,
+    });
   } catch (error) {
     logger.error(error);
     console.error("Internal Server Error 🔥:: ", error);
-    res.status(500); // Internal Server Error
-    return {code: 500, message: "Internal Server Error"};
+    return res.status(500).send({code: 500, message: "Internal Server Error"});
   }
 };
 
@@ -203,7 +231,7 @@ const verifyEmail = async (req, res) => {
     return res.status(200).send({
       status: 200,
       message: "Email successfully verified!",
-      redirectUrl: `${process.env.FRONTEND_URL || "http://localhost"}/login`, // Đường dẫn quay lại đăng nhập
+      redirectUrl: `${process.env.FRONTEND_URL || "http://localhost:5173"}/login`, // Đường dẫn quay lại đăng nhập
     });
   } catch (error) {
     logger.error(error);
@@ -247,7 +275,7 @@ const Login = async (req, res) => {
     });
   } catch (error) {
     logger.error(error);
-    console.error("Internal Server Error 🔥:: ", err);
+    console.error("Internal Server Error 🔥:: ", error);
     res.status(500);
     return {code: 500, message: "Internal Server Error"};
   }
