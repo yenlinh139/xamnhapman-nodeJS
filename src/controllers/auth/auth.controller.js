@@ -7,7 +7,8 @@ const logger = require("../../loggers/loggers.config");
 const nodemailer = require("nodemailer");
 
 const MAIL_PROVIDER_DEFAULTS = {
-  gmail: {host: "smtp.gmail.com", port: 465, secure: true},
+  // Gmail thường ổn định hơn với STARTTLS port 587 trong môi trường VPS/Docker.
+  gmail: {host: "smtp.gmail.com", port: 587, secure: false},
   mailtrap: {host: "sandbox.smtp.mailtrap.io", port: 2525, secure: false},
   brevo: {host: "smtp-relay.brevo.com", port: 587, secure: false},
   sendgrid: {host: "smtp.sendgrid.net", port: 587, secure: false, user: "apikey"},
@@ -31,17 +32,25 @@ function getMailConfig() {
 
 function createTransporter() {
   const mailConfig = getMailConfig();
+  const enableDebug = String(process.env.MAIL_DEBUG || "").trim().toLowerCase() === "true";
 
   return nodemailer.createTransport({
     host: mailConfig.host,
     port: mailConfig.port,
     secure: mailConfig.secure,
+    requireTLS: !mailConfig.secure,
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 15000,
+    logger: enableDebug,
+    debug: enableDebug,
     auth: {
       user: mailConfig.user,
       pass: mailConfig.pass,
+    },
+    tls: {
+      minVersion: "TLSv1.2",
+      servername: mailConfig.host,
     },
   });
 }
@@ -214,23 +223,48 @@ const SignUp = async (req, res) => {
     </html>
     `;
 
+    let emailSent = true;
+    let responseMessage = "Created account successfully. Please verify your email.";
+
     try {
       await sendEmail(escapedEmail, subject, htmlContent);
     } catch (mailError) {
-      logger.error(mailError);
-      console.error("Send verification email failed :: ", mailError);
-      await QueryDatabase(`DELETE FROM "users" WHERE email = $1`, [escapedEmail]);
-      return res.status(502).send({
-        code: 502,
-        message: "Không thể gửi email xác thực. Vui lòng thử lại sau.",
+      emailSent = false;
+      const mailConfig = getMailConfig();
+      const diagnostic = [
+        `provider=${mailConfig.provider}`,
+        `host=${mailConfig.host}`,
+        `port=${mailConfig.port}`,
+        `secure=${mailConfig.secure}`,
+        mailError.code ? `code=${mailError.code}` : null,
+        mailError.command ? `command=${mailError.command}` : null,
+        mailError.responseCode ? `responseCode=${mailError.responseCode}` : null,
+        mailError.response ? `response=${mailError.response}` : null,
+        `message=${mailError.message}`,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      logger.error(`Send verification email failed for ${escapedEmail}: ${diagnostic}`);
+      console.error("Send verification email failed :: ", {
+        provider: mailConfig.provider,
+        host: mailConfig.host,
+        port: mailConfig.port,
+        secure: mailConfig.secure,
+        code: mailError.code,
+        command: mailError.command,
+        responseCode: mailError.responseCode,
+        response: mailError.response,
+        message: mailError.message,
       });
+      responseMessage = "Tài khoản đã được tạo nhưng chưa gửi được email xác thực. Vui lòng thử lại sau hoặc liên hệ quản trị viên.";
     }
 
     // Trả về phản hồi sau khi đăng ký thành công
     return res.status(201).send({
       code: 201,
-      message: "Created account successfully. Please verify your email.",
-      emailSent: true,
+      message: responseMessage,
+      emailSent,
       verifyUrl,
     });
   } catch (error) {
