@@ -1,6 +1,8 @@
 const queryDatabase = require("../../utils/queryDatabase");
 const iotSyncService = require("../../services/iotSyncService");
 
+const VIETNAM_NOW_SQL = "timezone('Asia/Ho_Chi_Minh', CURRENT_TIMESTAMP)";
+
 /**
  * GET /api/iot/data
  * Get all IoT data with pagination (wide format)
@@ -221,6 +223,7 @@ const getDataByStation = async (request, reply) => {
           MAX(temp_unit) FILTER (WHERE temp_unit IS NOT NULL) AS temp_unit,
           COUNT(*) AS records_in_bucket
         FROM base
+        WHERE sync_5m_end_time <= ${VIETNAM_NOW_SQL}
         GROUP BY sync_5m_end_time
         ORDER BY sync_5m_end_time DESC
       `;
@@ -257,6 +260,7 @@ const getDataByStation = async (request, reply) => {
           MAX(temp_unit) FILTER (WHERE temp_unit IS NOT NULL) AS temp_unit,
           COUNT(*) AS records_in_bucket
         FROM base
+        WHERE hour_end_time <= ${VIETNAM_NOW_SQL}
         GROUP BY hour_end_time
         ORDER BY hour_end_time DESC
       `;
@@ -820,6 +824,13 @@ const getStations = async (request, reply) => {
           FROM iot_system.iot_data d0
           WHERE d0.serial_number = s.serial_number
             AND d0.salt_value IS NOT NULL
+            AND (
+              CASE
+                WHEN d0.date_time = date_trunc('hour', d0.date_time)
+                  THEN date_trunc('hour', d0.date_time)
+                ELSE date_trunc('hour', d0.date_time) + interval '1 hour'
+              END
+            ) <= ${VIETNAM_NOW_SQL}
         ) latest_slot
       ) salt_stats ON TRUE
     `;

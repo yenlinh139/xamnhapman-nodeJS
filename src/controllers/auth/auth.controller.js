@@ -6,20 +6,50 @@ const {compareHashPassword, hashPassword} = require("../../utils/hashBcrypt");
 const logger = require("../../loggers/loggers.config");
 const nodemailer = require("nodemailer");
 
-// Cấu hình Nodemailer để gửi email - lấy từ biến môi trường
-let transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true, // Use SSL for port 465
-  auth: {
-    user: process.env.EMAIL || "", // Lấy từ .env - EMAIL
-    pass: process.env.EMAIL_PASSWORD || "", // Lấy từ .env - EMAIL_PASSWORD (App Password của Gmail)
-  },
-});
+const MAIL_PROVIDER_DEFAULTS = {
+  gmail: {host: "smtp.gmail.com", port: 465, secure: true},
+  mailtrap: {host: "sandbox.smtp.mailtrap.io", port: 2525, secure: false},
+  brevo: {host: "smtp-relay.brevo.com", port: 587, secure: false},
+  sendgrid: {host: "smtp.sendgrid.net", port: 587, secure: false, user: "apikey"},
+};
+
+function getMailConfig() {
+  const provider = String(process.env.MAIL_PROVIDER || "gmail").trim().toLowerCase();
+  const defaults = MAIL_PROVIDER_DEFAULTS[provider] || MAIL_PROVIDER_DEFAULTS.gmail;
+
+  const host = String(process.env.MAIL_HOST || defaults.host || "").trim();
+  const port = Number(process.env.MAIL_PORT || defaults.port || 0);
+  const secure = String(process.env.MAIL_SECURE || "").trim()
+    ? String(process.env.MAIL_SECURE).toLowerCase() === "true"
+    : Boolean(defaults.secure);
+  const user = String(process.env.MAIL_USER || process.env.EMAIL || defaults.user || "").trim();
+  const pass = String(process.env.MAIL_PASS || process.env.EMAIL_PASSWORD || "").trim();
+  const from = String(process.env.MAIL_FROM || user || "noreply@xamnhapman.local").trim();
+
+  return {provider, host, port, secure, user, pass, from};
+}
+
+function createTransporter() {
+  const mailConfig = getMailConfig();
+
+  return nodemailer.createTransport({
+    host: mailConfig.host,
+    port: mailConfig.port,
+    secure: mailConfig.secure,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+    auth: {
+      user: mailConfig.user,
+      pass: mailConfig.pass,
+    },
+  });
+}
 
 // Hàm gửi email
 function isEmailConfigured() {
-  return Boolean(String(process.env.EMAIL || "").trim() && String(process.env.EMAIL_PASSWORD || "").trim());
+  const mailConfig = getMailConfig();
+  return Boolean(mailConfig.host && mailConfig.port && mailConfig.user && mailConfig.pass);
 }
 
 function sendEmail(to, subject, htmlContent) {
@@ -27,8 +57,10 @@ function sendEmail(to, subject, htmlContent) {
     throw new Error("Email service is not configured");
   }
 
+  const mailConfig = getMailConfig();
+  const transporter = createTransporter();
   let mailOptions = {
-    from: process.env.EMAIL || "noreply@xamnhapman.local", // Lấy từ .env
+    from: mailConfig.from, // Lấy từ .env
     to: to, // Người nhận
     subject: subject, // Tiêu đề email
     html: htmlContent, // Nội dung email
