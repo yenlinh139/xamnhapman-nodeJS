@@ -33,6 +33,7 @@
     "iot:install-python": "cd scripts && pip install -r requirements.txt",
     "iot:test": "python scripts/test_iot_sync.py",
     "iot:test-quick": "python scripts/test_iot_sync.py --quick",
+    "mail:test": "node scripts/testMailConnection.js",
     "hydro:test-stats": "node test-hydro-stats.js",
     "hydro:test-stats-perf": "node test-hydro-stats.js --performance",
     "iot:update-stations": "node scripts/update_iot_stations_data.js",
