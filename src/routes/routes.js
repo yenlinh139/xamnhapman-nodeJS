@@ -45,6 +45,12 @@ const {
   GetLatestHydrometeorologyData,
 } = require("../controllers/hydrometeorology/hydrometeorology.controller");
 const {
+  GetReservoirPoints,
+  GetReservoirOverview,
+  GetReservoirData,
+  GetLatestReservoirData,
+} = require("../controllers/reservoir/reservoir.controller");
+const {
   GetHydrometeorologySummaryStats,
   GetRainfallStatsByStation,
   GetWaterLevelStatsByStation,
@@ -129,6 +135,12 @@ const router = (router, opts, next) => {
   router.get("/hydrometeorology-stations", GetHydrometeorology);
   router.get("/hydrometeorology-data/:kihieu", GetHydrometeorologyData);
   router.get("/hydrometeorology-latest", GetLatestHydrometeorologyData);
+
+  // reservoir discharge
+  router.get("/reservoir-points", GetReservoirPoints);
+  router.get("/reservoir-overview/:code", GetReservoirOverview);
+  router.get("/reservoir-data/:kihieu", GetReservoirData);
+  router.get("/reservoir-latest", GetLatestReservoirData);
 
   //hydrometeorology statistics
   router.get("/hydrometeorology-stats/summary", GetHydrometeorologySummaryStats);
