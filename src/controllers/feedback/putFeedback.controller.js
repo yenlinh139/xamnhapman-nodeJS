@@ -7,19 +7,19 @@ const ChangeFeedback = async (req, reply) => {
     const {email} = req.params;
 
     if (!email) {
-      return reply.code(400).send({code: 400, message: "Email is required"});
+      return reply.code(400).send({code: 400, message: "Email là bắt buộc"});
     }
 
     const {name, message, rating} = req.body;
 
     if (!name || !message) {
-      return reply.code(400).send({code: 400, message: "Missing required fields"});
+      return reply.code(400).send({code: 400, message: "Vui lòng điền đầy đủ các trường bắt buộc"});
     }
 
     // Kiểm tra xem email có tồn tại không
     const checkEmail = await QueryDatabase(`SELECT * FROM "feedbacks" WHERE email='${email}'`);
     if (checkEmail.rowCount === 0) {
-      return reply.code(404).send({code: 404, message: "Contact not found"});
+      return reply.code(404).send({code: 404, message: "Không tìm thấy liên hệ"});
     }
 
     // Cập nhật thông tin liên hệ
@@ -28,10 +28,10 @@ const ChangeFeedback = async (req, reply) => {
                  WHERE email='${email}';`;
     await QueryDatabase(sql);
 
-    return reply.code(200).send({code: 200, message: "Contact updated successfully"});
+    return reply.code(200).send({code: 200, message: "Cập nhật liên hệ thành công"});
   } catch (error) {
     logger.error(error);
-    return reply.code(500).send({code: 500, message: "Internal Server Error"});
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ nội bộ"});
   }
 };
 

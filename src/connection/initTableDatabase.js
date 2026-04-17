@@ -1,5 +1,6 @@
 const logger = require("../loggers/loggers.config");
 const QueryDatabase = require("../utils/queryDatabase");
+const runMigrations = require("./runMigrations");
 
 const initPostGISExtension = async () => {
   try {
@@ -127,6 +128,7 @@ const initTableDatabase = async () => {
     await initPostGISExtension(); // Tạo PostGIS Extension trước
     await initUsersTable(); // Tạo bảng Users
     await initFeedbacksTable(); // Tạo bảng Feedabcks
+    await runMigrations(); // Chạy các migration mới
     console.log("Init table database PostgreSQL success");
   } catch (error) {
     console.log("Error init table database :: ", error);

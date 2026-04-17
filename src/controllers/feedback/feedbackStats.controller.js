@@ -71,7 +71,7 @@ const GetFeedbackStats = async (req, reply) => {
     return reply.code(200).send(response);
   } catch (error) {
     logger.error(error);
-    return reply.code(500).send({code: 500, message: "Internal Server Error"});
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
   }
 };
 
@@ -130,7 +130,7 @@ const GetFeedbackStatsByTime = async (req, reply) => {
     return reply.code(200).send(stats);
   } catch (error) {
     logger.error(error);
-    return reply.code(500).send({code: 500, message: "Internal Server Error"});
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
   }
 };
 
@@ -159,7 +159,7 @@ const GetRecentFeedbacks = async (req, reply) => {
     return reply.code(200).send(result.rows);
   } catch (error) {
     logger.error(error);
-    return reply.code(500).send({code: 500, message: "Internal Server Error"});
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
   }
 };
 
@@ -183,7 +183,7 @@ const GetDetailedRatingStats = async (req, reply) => {
     return reply.code(200).send(result.rows);
   } catch (error) {
     logger.error(error);
-    return reply.code(500).send({code: 500, message: "Internal Server Error"});
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
   }
 };
 
