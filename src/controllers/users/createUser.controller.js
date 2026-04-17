@@ -6,7 +6,7 @@ const logger = require("../../loggers/loggers.config");
 const CreateUser = async (req, res, next) => {
   try {
     if (!req.body) {
-      res.status(400).send({status: 400, message: "Missing req.body data"});
+      res.status(400).send({status: 400, message: "Thiếu dữ liệu yêu cầu"});
     }
 
     const email = escape(req.body.email);
@@ -17,7 +17,7 @@ const CreateUser = async (req, res, next) => {
 
     if (!email || !name || !password || !phone) {
       res.status(400);
-      return {code: 400, message: "Missing required fields"};
+      return {code: 400, message: "Vui lòng điền đầy đủ các trường bắt buộc"};
     }
 
     // Check user+email ko được trùng với cái đã có trong hệ thống
@@ -25,11 +25,11 @@ const CreateUser = async (req, res, next) => {
     const checkName = await QueryDatabase(`SELECT * FROM "users" WHERE name='${name}'`);
     if (checkEmail.rowCount > 0) {
       res.status(409);
-      return {code: 409, message: "Email already exists"};
+      return {code: 409, message: "Email đã được sử dụng"};
     }
     if (checkName.rowCount > 0) {
       res.status(409);
-      return {code: 409, message: "Name already exists"};
+      return {code: 409, message: "Tên người dùng đã tồn tại"};
     }
     // Hash password
     const hashedPassword = await hashPassword(password);
@@ -40,11 +40,11 @@ const CreateUser = async (req, res, next) => {
     `;
 
     await QueryDatabase(sql);
-    return {code: 201, message: "Create user success"};
+    return {code: 201, message: "Tạo người dùng thành công"};
   } catch (error) {
     logger.error(error);
     res.status(500);
-    return {code: 500, message: "Internal Server Error"};
+    return {code: 500, message: "Lỗi máy chủ nội bộ"};
   }
 };
 

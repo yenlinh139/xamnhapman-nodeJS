@@ -8,21 +8,21 @@ const DeleteUser = async (req, res, next) => {
     // Check có truyền vào id hay không
     if (!id || id == undefined || id == null || id == "") {
       res.status(404);
-      return {code: 404, message: "Missing id"};
+      return {code: 404, message: "Thiếu id"};
     }
 
     // Check id có trong CSDL hay không
     const checkId = await QueryDatabase(`SELECT * FROM "users" WHERE id='${id}'`);
     if (checkId.rowCount === 0) {
       res.status(404);
-      return {code: 404, message: "User not found"};
+      return {code: 404, message: "Không tìm thấy người dùng"};
     }
 
     // Write sql checkrole by id
     const checkRole = await QueryDatabase(`SELECT * FROM "users" WHERE id='${id}'`);
     if (checkRole.rows[0].role == 1) {
       res.status(401);
-      return {code: 401, message: "Can not delete administrator"};
+      return {code: 401, message: "Không thể xóa tài khoản quản trị viên"};
     }
 
     const sql = `
@@ -30,11 +30,11 @@ const DeleteUser = async (req, res, next) => {
     `;
 
     await QueryDatabase(sql);
-    return {code: 200, message: "Delete user success"};
+    return {code: 200, message: "Xóa người dùng thành công"};
   } catch (error) {
     logger.error(error);
     res.status(500);
-    return {code: 500, message: "Internal Server Error"};
+    return {code: 500, message: "Lỗi máy chủ nội bộ"};
   }
 };
 

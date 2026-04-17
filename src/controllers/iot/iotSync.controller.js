@@ -45,7 +45,7 @@ const initialSync = async (request, reply) => {
     if (stationsToSync.length === 0) {
       return reply.code(404).send({
         success: false,
-        message: "No active stations found to sync",
+        message: "Không tìm thấy trạm nào đang hoạt động để đồng bộ",
       });
     }
 
@@ -113,7 +113,7 @@ const initialSync = async (request, reply) => {
     // Response
     reply.code(200).send({
       success: true,
-      message: `Initial sync completed for ${stationsToSync.length} station(s)`,
+      message: `Hoàn tất đồng bộ ban đầu cho ${stationsToSync.length} trạm`,
       summary: {
         totalStations: stationsToSync.length,
         successful: successCount,
@@ -129,7 +129,7 @@ const initialSync = async (request, reply) => {
     request.log.error("Error during initial sync:", error);
     reply.code(500).send({
       success: false,
-      message: "Initial sync failed",
+      message: "Đồng bộ ban đầu thất bại",
       error: error.message,
     });
   }
@@ -152,7 +152,7 @@ const syncDateRange = async (request, reply) => {
     if (!serialNumber || !startDate || !endDate) {
       return reply.code(400).send({
         success: false,
-        message: "Missing required fields: serialNumber, startDate, endDate",
+        message: "Thiếu các trường bắt buộc: serialNumber, startDate, endDate",
       });
     }
 
@@ -161,7 +161,7 @@ const syncDateRange = async (request, reply) => {
     if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
       return reply.code(400).send({
         success: false,
-        message: "Invalid date format. Use YYYY-MM-DD",
+        message: "Định dạng ngày không hợp lệ. Hãy sử dụng định dạng YYYY-MM-DD",
       });
     }
 
@@ -169,7 +169,7 @@ const syncDateRange = async (request, reply) => {
     if (new Date(startDate) > new Date(endDate)) {
       return reply.code(400).send({
         success: false,
-        message: "Start date must be before end date",
+        message: "Ngày bắt đầu phải trước ngày kết thúc",
       });
     }
 
@@ -184,7 +184,7 @@ const syncDateRange = async (request, reply) => {
     if (stationResult.rows.length === 0) {
       return reply.code(404).send({
         success: false,
-        message: `Station ${serialNumber} not found`,
+        message: `Không tìm thấy trạm ${serialNumber}`,
       });
     }
 
@@ -201,7 +201,7 @@ const syncDateRange = async (request, reply) => {
     if (result.success) {
       reply.code(200).send({
         success: true,
-        message: `Data synced successfully for ${station.station_name}`,
+        message: `Đồng bộ dữ liệu thành công cho trạm ${station.station_name}`,
         result: {
           serialNumber: station.serial_number,
           station_name: station.station_name,
@@ -216,7 +216,7 @@ const syncDateRange = async (request, reply) => {
     } else {
       reply.code(400).send({
         success: false,
-        message: `Sync failed for ${station.station_name}`,
+        message: `Đồng bộ thất bại cho trạm ${station.station_name}`,
         error: result.error,
       });
     }
@@ -224,7 +224,7 @@ const syncDateRange = async (request, reply) => {
     request.log.error("Error syncing date range:", error);
     reply.code(500).send({
       success: false,
-      message: "Failed to sync date range",
+      message: "Không thể đồng bộ theo khoảng thời gian",
       error: error.message,
     });
   }
@@ -299,7 +299,7 @@ const getSyncStatus = async (request, reply) => {
     request.log.error("Error getting sync status:", error);
     reply.code(500).send({
       success: false,
-      message: "Failed to get sync status",
+      message: "Không thể lấy trạng thái đồng bộ",
       error: error.message,
     });
   }
@@ -322,14 +322,14 @@ const manualSync = async (request, reply) => {
 
     reply.code(200).send({
       success: true,
-      message: "Manual sync completed",
+      message: "Hoàn tất đồng bộ thủ công",
       summary: result,
     });
   } catch (error) {
     request.log.error("Manual sync failed:", error);
     reply.code(500).send({
       success: false,
-      message: "Manual sync failed",
+      message: "Đồng bộ thủ công thất bại",
       error: error.message,
     });
   }
@@ -357,7 +357,7 @@ const getCronStatus = async (request, reply) => {
     request.log.error("Error getting cron status:", error);
     reply.code(500).send({
       success: false,
-      message: "Failed to get cron status",
+      message: "Không thể lấy trạng thái cron",
       error: error.message,
     });
   }

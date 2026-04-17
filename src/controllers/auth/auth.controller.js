@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const escape = require("escape-html");
 const jwt = require("jsonwebtoken");
 const {GenerateAccessToken, GenerateRefreshToken} = require("../../utils/generateJWT");
@@ -81,7 +82,7 @@ function sendEmail(to, subject, htmlContent) {
 const SignUp = async (req, res) => {
   try {
     if (!req.body) {
-      return res.status(400).send({status: 400, message: "Missing req.body data"});
+      return res.status(400).send({status: 400, message: "Thiếu dữ liệu yêu cầu"});
     }
 
     const rawName = req.body.name;
@@ -90,7 +91,7 @@ const SignUp = async (req, res) => {
 
     // Check email, user Not Null
     if (!rawName || !rawEmail || !rawPassword) {
-      return res.status(400).send({code: 400, message: "Missing required fields"});
+      return res.status(400).send({code: 400, message: "Vui lòng điền đầy đủ các trường bắt buộc"});
     }
 
     const escapedEmail = escape(String(rawEmail).trim());
@@ -100,13 +101,13 @@ const SignUp = async (req, res) => {
     // Check if the email already exists
     const existingUser = await QueryDatabase(`SELECT * FROM "users" WHERE email = $1`, [escapedEmail]);
     if (existingUser.rows.length > 0) {
-      return res.status(409).send({code: 409, message: "Email already exists"});
+      return res.status(409).send({code: 409, message: "Email đã được sử dụng"});
     }
 
     if (!isEmailConfigured()) {
       return res.status(500).send({
         code: 500,
-        message: "Email service is not configured. Please contact the administrator.",
+        message: "Dịch vụ email chưa được cấu hình. Vui lòng liên hệ quản trị viên.",
       });
     }
 
@@ -224,7 +225,7 @@ const SignUp = async (req, res) => {
     `;
 
     let emailSent = true;
-    let responseMessage = "Created account successfully. Please verify your email.";
+    let responseMessage = "Tạo tài khoản thành công. Vui lòng kiểm tra email để xác thực."
 
     try {
       await sendEmail(escapedEmail, subject, htmlContent);
@@ -269,8 +270,8 @@ const SignUp = async (req, res) => {
     });
   } catch (error) {
     logger.error(error);
-    console.error("Internal Server Error 🔥:: ", error);
-    return res.status(500).send({code: 500, message: "Internal Server Error"});
+    console.error("Lỗi máy chủ 🔥:: ", error);
+    return res.status(500).send({code: 500, message: "Lỗi máy chủ nội bộ"});
   }
 };
 
@@ -283,7 +284,7 @@ const verifyEmail = async (req, res) => {
     const user = await QueryDatabase(checkUserSql);
 
     if (!user.rows.length) {
-      return res.status(404).send({status: 404, message: "User not found"});
+      return res.status(404).send({status: 404, message: "Không tìm thấy người dùng"});
     }
 
     // Cập nhật trạng thái email_verified trong cơ sở dữ liệu
@@ -296,12 +297,12 @@ const verifyEmail = async (req, res) => {
 
     return res.status(200).send({
       status: 200,
-      message: "Email successfully verified!",
+      message: "Xác thực email thành công!",
       redirectUrl: `${process.env.FRONTEND_URL || "http://localhost:5173"}/login`, // Đường dẫn quay lại đăng nhập
     });
   } catch (error) {
     logger.error(error);
-    return res.status(500).send({status: 500, message: "Internal Server Error"});
+    return res.status(500).send({status: 500, message: "Lỗi máy chủ nội bộ"});
   }
 };
 
@@ -314,7 +315,7 @@ const Login = async (req, res) => {
     // Kiểm tra email có tồn tại không
     if (!user.rows.length) {
       res.status(404);
-      return {code: 404, message: "Email not found"};
+      return {code: 404, message: "Email không tồn tại"};
     }
 
     const foundUser = user.rows[0];
@@ -322,14 +323,14 @@ const Login = async (req, res) => {
     // Kiểm tra xem email đã được xác thực chưa
     if (!foundUser.email_verified || foundUser.email_verified === false) {
       res.status(403);
-      return {code: 403, message: "Please verify your email before logging in"};
+      return {code: 403, message: "Vui lòng xác thực email trước khi đăng nhập"};
     }
 
     // Kiểm tra mật khẩu
     const matchPassword = await compareHashPassword(password, foundUser?.password);
     if (!matchPassword) {
       res.status(401);
-      return {code: 401, message: "Password is wrong"};
+      return {code: 401, message: "Mật khẩu không đúng"};
     }
 
     const accessToken = GenerateAccessToken({name: foundUser?.name, email: foundUser?.email, role: foundUser?.role});
@@ -341,9 +342,9 @@ const Login = async (req, res) => {
     });
   } catch (error) {
     logger.error(error);
-    console.error("Internal Server Error 🔥:: ", error);
+    console.error("Lỗi máy chủ 🔥:: ", error);
     res.status(500);
-    return {code: 500, message: "Internal Server Error"};
+    return {code: 500, message: "Lỗi máy chủ nội bộ"};
   }
 };
 
@@ -353,19 +354,19 @@ const RefreshToken = async (req, res) => {
 
     if (!authHeaders) {
       res.status(401);
-      return {code: 401, message: "Can not find authorization header"};
+      return {code: 401, message: "Không tìm thấy header xác thực"};
     }
 
     const checkBearer = authHeaders.includes("Bearer");
     if (!checkBearer) {
       res.status(401);
-      return {code: 401, message: "Do not have Bearer"};
+      return {code: 401, message: "Token không đúng định dạng Bearer"};
     }
 
     const token = authHeaders.replace("Bearer ", "");
     if (!token) {
       res.status(401);
-      return {code: 401, message: "Unauthorized"};
+      return {code: 401, message: "Không có quyền truy cập"};
     }
 
     const checkVerify = jwt.verify(token, process.env.REFRESH_TOKEN);
@@ -379,7 +380,121 @@ const RefreshToken = async (req, res) => {
   } catch (error) {
     logger.error(error);
     res.status(401);
-    return {code: 401, message: "Unauthorized"};
+    return {code: 401, message: "Không có quyền truy cập"};
+  }
+};
+
+const ForgotPassword = async (req, res) => {
+  try {
+    const rawEmail = req.body && req.body.email;
+    if (!rawEmail) {
+      return res.status(400).send({code: 400, message: "Vui lòng nhập email"});
+    }
+
+    const email = escape(String(rawEmail).trim().toLowerCase());
+
+    const userResult = await QueryDatabase(`SELECT * FROM "users" WHERE LOWER(email) = $1`, [email]);
+    // Always return 200 to prevent email enumeration
+    if (!userResult.rows.length) {
+      return res.status(200).send({code: 200, message: "Liên kết đặt lại mật khẩu đã được gửi, vui lòng kiểm tra email của bạn."});
+    }
+
+    const user = userResult.rows[0];
+
+    // Generate secure random token
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await QueryDatabase(
+      `UPDATE "users" SET reset_token = $1, reset_token_expires = $2 WHERE LOWER(email) = $3`,
+      [tokenHash, expires.toISOString(), email]
+    );
+
+    if (!isEmailConfigured()) {
+      return res.status(500).send({code: 500, message: "Dịch vụ email chưa được cấu hình"});
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const resetUrl = `${frontendUrl}/reset-password/${encodeURIComponent(token)}`;
+
+    const htmlContent = `
+    <html lang="vi">
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: "Inter", sans-serif; background-color: #f4f7fa; color: #333; padding: 20px; }
+          .email-container { max-width: 600px; margin: 0 auto; background-color: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
+          .email-header { background-color: #2a9d8f; padding: 30px; text-align: center; color: #fff; font-size: 22px; font-weight: bold; }
+          .email-body { padding: 30px; text-align: center; }
+          .email-body p { font-size: 16px; margin-bottom: 15px; }
+          .reset-button { display: inline-block; background-color: #2a9d8f; color: #fff !important; padding: 12px 30px; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 5px; margin-top: 10px; }
+          .email-footer { background-color: #f1f1f1; color: #777; text-align: center; padding: 20px; font-size: 13px; }
+        </style>
+      </head>
+      <body>
+        <div class="email-container">
+          <div class="email-header">Đặt Lại Mật Khẩu</div>
+          <div class="email-body">
+            <p>Chào <b>${escape(user.name || email)}</b>,</p>
+            <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn.</p>
+            <p>Nhấn vào nút bên dưới để đặt lại mật khẩu. Liên kết có hiệu lực trong <b>1 giờ</b>.</p>
+            <a href="${resetUrl}" class="reset-button">Đặt Lại Mật Khẩu</a>
+            <p style="margin-top:20px; font-size:13px; color:#888;">Nếu bạn không yêu cầu điều này, hãy bỏ qua email này. Mật khẩu của bạn sẽ không thay đổi.</p>
+          </div>
+          <div class="email-footer">
+            <p>© 2025 Xâm nhập mặn Tp. Hồ Chí Minh.</p>
+          </div>
+        </div>
+      </body>
+    </html>`;
+
+    try {
+      await sendEmail(email, "Đặt lại mật khẩu - Xâm nhập mặn Tp.HCM", htmlContent);
+    } catch (mailError) {
+      logger.error(`ForgotPassword send email failed for ${email}: ${mailError.message}`);
+      return res.status(500).send({code: 500, message: "Không thể gửi email. Vui lòng thử lại sau."});
+    }
+
+    return res.status(200).send({code: 200, message: "Liên kết đặt lại mật khẩu đã được gửi, vui lòng kiểm tra email của bạn."});
+  } catch (error) {
+    logger.error(error);
+    return res.status(500).send({code: 500, message: "Lỗi máy chủ nội bộ"});
+  }
+};
+
+const ResetPassword = async (req, res) => {
+  try {
+    const {token, password} = req.body || {};
+    if (!token || !password) {
+      return res.status(400).send({code: 400, message: "Token và mật khẩu mới là bắt buộc"});
+    }
+
+    const tokenHash = crypto.createHash("sha256").update(String(token)).digest("hex");
+
+    const userResult = await QueryDatabase(
+      `SELECT * FROM "users" WHERE reset_token = $1 AND reset_token_expires > NOW()`,
+      [tokenHash]
+    );
+
+    if (!userResult.rows.length) {
+      return res.status(400).send({code: 400, message: "Token không hợp lệ hoặc đã hết hạn"});
+    }
+
+    const user = userResult.rows[0];
+    const escapedPassword = escape(String(password));
+    const hashedPassword = await hashPassword(escapedPassword);
+
+    await QueryDatabase(
+      `UPDATE "users" SET password = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2`,
+      [hashedPassword, user.id]
+    );
+
+    return res.status(200).send({code: 200, message: "Mật khẩu đã được đặt lại thành công"});
+  } catch (error) {
+    logger.error(error);
+    return res.status(500).send({code: 500, message: "Lỗi máy chủ nội bộ"});
   }
 };
 
@@ -388,4 +503,6 @@ module.exports = {
   Login,
   RefreshToken,
   verifyEmail,
+  ForgotPassword,
+  ResetPassword,
 };

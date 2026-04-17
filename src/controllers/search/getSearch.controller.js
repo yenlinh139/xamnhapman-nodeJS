@@ -27,7 +27,7 @@ const GetSearchAll = async (req, reply) => {
     const {limit = 50} = req.query;
 
     if (!id) {
-      return reply.code(400).send({code: 400, message: "id is required"});
+      return reply.code(400).send({code: 400, message: "ID là bắt buộc"});
     }
 
     // Decode URL và sanitize input

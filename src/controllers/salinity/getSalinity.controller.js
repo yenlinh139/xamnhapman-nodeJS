@@ -111,7 +111,7 @@ const GetSalinityPoints = async (req, reply) => {
     return reply.code(200).send(result);
   } catch (error) {
     logger.error(error);
-    return reply.code(500).send({code: 500, message: "Internal Server Error"});
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
   }
 };
 

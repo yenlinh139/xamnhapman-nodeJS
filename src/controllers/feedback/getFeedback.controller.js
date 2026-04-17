@@ -6,19 +6,19 @@ const GetFeedback = async (req, reply) => {
     const {email} = req.params;
 
     if (!email) {
-      return reply.code(400).send({code: 400, message: "Email is required"});
+      return reply.code(400).send({code: 400, message: "Email là bắt buộc"});
     }
 
     const result = await QueryDatabase(`SELECT * FROM "feedbacks" WHERE email='${email}'`);
 
     if (result.rowCount === 0) {
-      return reply.code(404).send({code: 404, message: "Contact not found"});
+      return reply.code(404).send({code: 404, message: "Không tìm thấy liên hệ"});
     }
 
     return reply.code(200).send(result.rows[0]);
   } catch (error) {
     logger.error(error);
-    return reply.code(500).send({code: 500, message: "Internal Server Error"});
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ nội bộ"});
   }
 };
 

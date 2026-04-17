@@ -123,7 +123,7 @@ const getAllData = async (request, reply) => {
     request.log.error("Error getting all IoT data:", error);
     reply.code(500).send({
       success: false,
-      message: "Failed to get IoT data",
+      message: "Không thể lấy dữ liệu IoT",
       error: error.message,
     });
   }
@@ -288,7 +288,7 @@ const getDataByStation = async (request, reply) => {
     } else {
       return reply.code(400).send({
         success: false,
-        message: "Invalid groupBy. Supported values: none, hour, day, date",
+        message: "groupBy không hợp lệ. Giá trị hỗ trợ: none, hour, day, date",
       });
     }
 
@@ -310,7 +310,7 @@ const getDataByStation = async (request, reply) => {
     request.log.error("Error getting station data:", error);
     reply.code(500).send({
       success: false,
-      message: "Failed to get station data",
+      message: "Không thể lấy dữ liệu trạm",
       error: error.message,
     });
   }
@@ -362,7 +362,7 @@ const manualSync = async (request, reply) => {
       if (result.success) {
         reply.code(200).send({
           success: true,
-          message: `Manual sync completed for station ${serialNumber}`,
+          message: `Hoàn tất đồng bộ thủ công cho trạm ${serialNumber}`,
           result: {
             serialNumber: result.serialNumber,
             period: `${start} to ${end}`,
@@ -375,7 +375,7 @@ const manualSync = async (request, reply) => {
       } else {
         reply.code(400).send({
           success: false,
-          message: `Sync failed for station ${serialNumber}`,
+          message: `Đồng bộ thất bại cho trạm ${serialNumber}`,
           error: result.error,
         });
       }
@@ -384,7 +384,7 @@ const manualSync = async (request, reply) => {
     request.log.error("Error during manual sync:", error);
     reply.code(500).send({
       success: false,
-      message: "Manual sync failed",
+      message: "Đồng bộ thủ công thất bại",
       error: error.message,
     });
   }
@@ -425,13 +425,13 @@ const getStationBySerial = async (request, reply) => {
 
     const result = await queryDatabase(query, [serialNumber]);
     if (result.rows.length === 0) {
-      return reply.code(404).send({success: false, message: `Station ${serialNumber} not found`});
+      return reply.code(404).send({success: false, message: `Không tìm thấy trạm ${serialNumber}`});
     }
 
     return reply.code(200).send({success: true, data: result.rows[0]});
   } catch (error) {
     request.log.error("Error getting station by serial:", error);
-    return reply.code(500).send({success: false, message: "Failed to get station", error: error.message});
+    return reply.code(500).send({success: false, message: "Không thể lấy thông tin trạm", error: error.message});
   }
 };
 
@@ -471,12 +471,12 @@ const createStation = async (request, reply) => {
 
     return reply.code(201).send({
       success: true,
-      message: "IoT station created successfully",
+      message: "Tạo trạm IoT thành công",
       data: result.rows[0],
     });
   } catch (error) {
     request.log.error("Error creating IoT station:", error);
-    const message = error.code === "23505" ? "serial_number đã tồn tại" : "Failed to create IoT station";
+    const message = error.code === "23505" ? "serial_number đã tồn tại" : "Không thể tạo trạm IoT";
     const statusCode = error.code === "23505" ? 409 : 500;
     return reply.code(statusCode).send({success: false, message, error: error.message});
   }
@@ -524,17 +524,17 @@ const updateStation = async (request, reply) => {
     );
 
     if (result.rows.length === 0) {
-      return reply.code(404).send({success: false, message: `Station ${serialNumber} not found`});
+      return reply.code(404).send({success: false, message: `Không tìm thấy trạm ${serialNumber}`});
     }
 
     return reply.code(200).send({
       success: true,
-      message: "IoT station updated successfully",
+      message: "Cập nhật trạm IoT thành công",
       data: result.rows[0],
     });
   } catch (error) {
     request.log.error("Error updating IoT station:", error);
-    const message = error.code === "23505" ? "serial_number đã tồn tại" : "Failed to update IoT station";
+    const message = error.code === "23505" ? "serial_number đã tồn tại" : "Không thể cập nhật trạm IoT";
     const statusCode = error.code === "23505" ? 409 : 500;
     return reply.code(statusCode).send({success: false, message, error: error.message});
   }
@@ -554,17 +554,17 @@ const deleteStation = async (request, reply) => {
     );
 
     if (result.rows.length === 0) {
-      return reply.code(404).send({success: false, message: `Station ${serialNumber} not found`});
+      return reply.code(404).send({success: false, message: `Không tìm thấy trạm ${serialNumber}`});
     }
 
     return reply.code(200).send({
       success: true,
-      message: "IoT station deleted successfully",
+      message: "Xóa trạm IoT thành công",
       data: result.rows[0],
     });
   } catch (error) {
     request.log.error("Error deleting IoT station:", error);
-    return reply.code(500).send({success: false, message: "Failed to delete IoT station", error: error.message});
+    return reply.code(500).send({success: false, message: "Không thể xóa trạm IoT", error: error.message});
   }
 };
 
@@ -593,7 +593,7 @@ const createIoTData = async (request, reply) => {
 
     const stationCheck = await queryDatabase(`SELECT serial_number FROM iot_system.iot_stations WHERE serial_number = $1`, [serial_number]);
     if (stationCheck.rows.length === 0) {
-      return reply.code(404).send({success: false, message: `Station ${serial_number} not found`});
+      return reply.code(404).send({success: false, message: `Không tìm thấy trạm ${serial_number}`});
     }
 
     const result = await queryDatabase(
@@ -629,12 +629,12 @@ const createIoTData = async (request, reply) => {
 
     return reply.code(201).send({
       success: true,
-      message: "IoT data created successfully",
+      message: "Tạo dữ liệu IoT thành công",
       data: result.rows[0],
     });
   } catch (error) {
     request.log.error("Error creating IoT data:", error);
-    const message = error.code === "23505" ? "Bản ghi serial_number + date_time đã tồn tại" : "Failed to create IoT data";
+    const message = error.code === "23505" ? "Bản ghi serial_number + date_time đã tồn tại" : "Không thể tạo dữ liệu IoT";
     const statusCode = error.code === "23505" ? 409 : 500;
     return reply.code(statusCode).send({success: false, message, error: error.message});
   }
@@ -686,17 +686,17 @@ const updateIoTData = async (request, reply) => {
     );
 
     if (result.rows.length === 0) {
-      return reply.code(404).send({success: false, message: `IoT data id ${id} not found`});
+      return reply.code(404).send({success: false, message: `Không tìm thấy dữ liệu IoT id ${id}`});
     }
 
     return reply.code(200).send({
       success: true,
-      message: "IoT data updated successfully",
+      message: "Cập nhật dữ liệu IoT thành công",
       data: result.rows[0],
     });
   } catch (error) {
     request.log.error("Error updating IoT data:", error);
-    const message = error.code === "23505" ? "Bản ghi serial_number + date_time đã tồn tại" : "Failed to update IoT data";
+    const message = error.code === "23505" ? "Bản ghi serial_number + date_time đã tồn tại" : "Không thể cập nhật dữ liệu IoT";
     const statusCode = error.code === "23505" ? 409 : 500;
     return reply.code(statusCode).send({success: false, message, error: error.message});
   }
@@ -712,17 +712,17 @@ const deleteIoTData = async (request, reply) => {
     );
 
     if (result.rows.length === 0) {
-      return reply.code(404).send({success: false, message: `IoT data id ${id} not found`});
+      return reply.code(404).send({success: false, message: `Không tìm thấy dữ liệu IoT id ${id}`});
     }
 
     return reply.code(200).send({
       success: true,
-      message: "IoT data deleted successfully",
+      message: "Xóa dữ liệu IoT thành công",
       data: result.rows[0],
     });
   } catch (error) {
     request.log.error("Error deleting IoT data:", error);
-    return reply.code(500).send({success: false, message: "Failed to delete IoT data", error: error.message});
+    return reply.code(500).send({success: false, message: "Không thể xóa dữ liệu IoT", error: error.message});
   }
 };
 
@@ -854,7 +854,7 @@ const getStations = async (request, reply) => {
     request.log.error("Error getting stations:", error);
     reply.code(500).send({
       success: false,
-      message: "Failed to get stations",
+      message: "Không thể lấy danh sách trạm",
       error: error.message,
     });
   }
@@ -925,7 +925,7 @@ const getSyncLogs = async (request, reply) => {
     request.log.error("Error getting sync logs:", error);
     reply.code(500).send({
       success: false,
-      message: "Failed to get sync logs",
+      message: "Không thể lấy nhật ký đồng bộ",
       error: error.message,
     });
   }
@@ -1005,7 +1005,7 @@ const getStats = async (request, reply) => {
     request.log.error("Error getting stats:", error);
     reply.code(500).send({
       success: false,
-      message: "Failed to get stats",
+      message: "Không thể lấy thống kê",
       error: error.message,
     });
   }
@@ -1041,7 +1041,7 @@ const clearAllData = async (request, reply) => {
 
     reply.code(200).send({
       success: true,
-      message: "All IoT data cleared successfully",
+      message: "Đã xóa toàn bộ dữ liệu IoT thành công",
       cleared: true,
       resync: resync,
       syncResult: syncResult,
@@ -1050,7 +1050,7 @@ const clearAllData = async (request, reply) => {
     request.log.error("Error clearing all IoT data:", error);
     reply.code(500).send({
       success: false,
-      message: "Failed to clear IoT data",
+      message: "Không thể xóa dữ liệu IoT",
       error: error.message,
     });
   }

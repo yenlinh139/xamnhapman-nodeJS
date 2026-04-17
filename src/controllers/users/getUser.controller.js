@@ -24,7 +24,7 @@ const GetUser = async (req, res, next) => {
   } catch (error) {
     logger.error(error);
     res.status(500);
-    return {code: 500, message: "Internal Server Error"};
+    return {code: 500, message: "Lỗi máy chủ nội bộ"};
   }
 };
 
@@ -45,7 +45,7 @@ const GetUserById = async (req, res, next) => {
   } catch (error) {
     logger.error(error);
     res.status(500);
-    return {code: 500, message: "Internal Server Error"};
+    return {code: 500, message: "Lỗi máy chủ nội bộ"};
   }
 };
 

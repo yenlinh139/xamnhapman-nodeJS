@@ -49,7 +49,7 @@ class OptimizedIoTSyncService {
       // Verify station exists với caching
       const station = await this.getStationInfo(serialNumber);
       if (!station || station.status !== "active") {
-        return {success: false, message: "Station not found or inactive"};
+        return {success: false, message: "Không tìm thấy trạm hoặc trạm không hoạt động"};
       }
 
       // Chia nhỏ thành các batch
