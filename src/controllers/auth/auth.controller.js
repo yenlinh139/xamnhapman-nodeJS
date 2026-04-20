@@ -119,13 +119,21 @@ const SignUp = async (req, res) => {
     `;
     await QueryDatabase(insertUserSql, [escapedName, escapedEmail, hashedPassword, 0, false]);
 
-    // Mã hóa email trước khi đưa vào URL
-    const encodedEmail = encodeURIComponent(escapedEmail); // Mã hóa email
+    // Tạo token xác thực email có hạn 24 giờ
+    const verifyToken = crypto.randomBytes(32).toString("hex");
+    const verifyTokenHash = crypto.createHash("sha256").update(verifyToken).digest("hex");
+    const verifyTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 giờ
+
+    await QueryDatabase(
+      `UPDATE "users" SET email_verify_token = $1, email_verify_token_expires = $2 WHERE email = $3`,
+      [verifyTokenHash, verifyTokenExpires.toISOString(), escapedEmail]
+    );
+
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    const verifyUrl = `${frontendUrl}/verify-email/${encodedEmail}`;
+    const verifyUrl = `${frontendUrl}/verify-email/${encodeURIComponent(verifyToken)}`;
 
     // Gửi email xác nhận sau khi đăng ký thành công
-    const subject = "Xác thực email";
+    const subject = "[WebGIS xâm nhập mặn] Xác thực email";
     const htmlContent = `
     <html lang="en">
       <head>
@@ -210,14 +218,14 @@ const SignUp = async (req, res) => {
           </div>
           <div class="email-body">
             <p>Chào <b>${escapedName}</b>,</p>
-            <p>Cảm ơn bạn đã đăng ký! Để hoàn tất quá trình đăng ký, vui lòng xác thực email của bạn bằng cách nhấn vào nút bên dưới:</p>
+            <p>Để hoàn tất đăng kí tài khoản của bạn, vui lòng nhấn vào nút bên dưới [Xác thực email]</p>
             <a href="${verifyUrl}" class="verify-button">Xác Thực Email</a>
           </div>
           <div class="email-footer">
-            <p>Tất cả quyền được bảo vệ.  Email này không thể nhận được phản hồi.</p>
-            <p>Nếu bạn không yêu cầu đăng ký này, vui lòng bỏ qua email này.</p>
+            <p>Email này không thể nhận được phản hồi.</p>
+            <p>Nếu bạn không đăng ký tài khoản, vui lòng bỏ qua email này.</p>
             <p><a href="#">Chính sách bảo mật</a> | <a href="#">Điều khoản sử dụng</a></p>
-            <p>© 2025 Xâm nhập mặn Tp. Hồ Chí Minh.</p>
+            <p>© 2026 | WebGIS giám sát và cảnh báo xâm nhập mặn trên hệ thống sông, kênh, rạch tại TP. Hồ Chí Minh</p>
           </div>
         </div>
       </body>
@@ -277,32 +285,45 @@ const SignUp = async (req, res) => {
 
 // Hàm xác thực email
 const verifyEmail = async (req, res) => {
-  const escapedEmail = decodeURIComponent(req.params.userId);
+  const rawToken = decodeURIComponent(req.params.userId);
   try {
-    // Kiểm tra người dùng trong cơ sở dữ liệu
-    const checkUserSql = `SELECT * FROM "users" WHERE email = '${escapedEmail}'`;
-    const user = await QueryDatabase(checkUserSql);
-
-    if (!user.rows.length) {
-      return res.status(404).send({status: 404, message: "Không tìm thấy người dùng"});
+    if (!rawToken) {
+      return res.status(400).send({code: 400, message: "Token xác thực không hợp lệ"});
     }
 
-    // Cập nhật trạng thái email_verified trong cơ sở dữ liệu
-    const updatedUserSql = `
-      UPDATE "users"
-      SET email_verified = TRUE
-      WHERE email = '${escapedEmail}'
-    `;
-    await QueryDatabase(updatedUserSql);
+    const tokenHash = crypto.createHash("sha256").update(String(rawToken)).digest("hex");
+
+    // Kiểm tra token và hạn sử dụng
+    const userResult = await QueryDatabase(
+      `SELECT * FROM "users" WHERE email_verify_token = $1`,
+      [tokenHash]
+    );
+
+    if (!userResult.rows.length) {
+      return res.status(400).send({code: 400, message: "Link xác thực không hợp lệ hoặc đã được sử dụng"});
+    }
+
+    const user = userResult.rows[0];
+
+    // Kiểm tra hết hạn
+    if (!user.email_verify_token_expires || new Date(user.email_verify_token_expires) < new Date()) {
+      return res.status(400).send({code: 400, expired: true, message: "Link xác thực đã hết hạn. Vui lòng đăng ký lại để nhận email mới."});
+    }
+
+    // Cập nhật email_verified và xóa token
+    await QueryDatabase(
+      `UPDATE "users" SET email_verified = TRUE, email_verify_token = NULL, email_verify_token_expires = NULL WHERE id = $1`,
+      [user.id]
+    );
 
     return res.status(200).send({
-      status: 200,
+      code: 200,
       message: "Xác thực email thành công!",
-      redirectUrl: `${process.env.FRONTEND_URL || "http://localhost:5173"}/login`, // Đường dẫn quay lại đăng nhập
+      redirectUrl: `${process.env.FRONTEND_URL || "http://localhost:5173"}/login`,
     });
   } catch (error) {
     logger.error(error);
-    return res.status(500).send({status: 500, message: "Lỗi máy chủ nội bộ"});
+    return res.status(500).send({code: 500, message: "Lỗi máy chủ nội bộ"});
   }
 };
 
@@ -439,19 +460,19 @@ const ForgotPassword = async (req, res) => {
           <div class="email-body">
             <p>Chào <b>${escape(user.name || email)}</b>,</p>
             <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn.</p>
-            <p>Nhấn vào nút bên dưới để đặt lại mật khẩu. Liên kết có hiệu lực trong <b>1 giờ</b>.</p>
+            <p>Để đặt lại mật khẩu tài khoản của bạn, vui lòng nhấn vào nút bên dưới [Đặt lại mật khẩu].</p>
             <a href="${resetUrl}" class="reset-button">Đặt Lại Mật Khẩu</a>
             <p style="margin-top:20px; font-size:13px; color:#888;">Nếu bạn không yêu cầu điều này, hãy bỏ qua email này. Mật khẩu của bạn sẽ không thay đổi.</p>
           </div>
           <div class="email-footer">
-            <p>© 2025 Xâm nhập mặn Tp. Hồ Chí Minh.</p>
+            <p>© 2026 | WebGIS giám sát và cảnh báo xâm nhập mặn trên hệ thống sông, kênh, rạch tại TP. Hồ Chí Minh</p>
           </div>
         </div>
       </body>
     </html>`;
 
     try {
-      await sendEmail(email, "Đặt lại mật khẩu - Xâm nhập mặn Tp.HCM", htmlContent);
+      await sendEmail(email, "[WebGIS xâm nhập mặn] Đặt lại mật khẩu", htmlContent);
     } catch (mailError) {
       logger.error(`ForgotPassword send email failed for ${email}: ${mailError.message}`);
       return res.status(500).send({code: 500, message: "Không thể gửi email. Vui lòng thử lại sau."});
@@ -498,6 +519,37 @@ const ResetPassword = async (req, res) => {
   }
 };
 
+// Kiểm tra token đặt lại mật khẩu còn hạn không (dùng khi frontend load trang reset-password)
+const ValidateResetToken = async (req, res) => {
+  try {
+    const rawToken = req.params.token;
+    if (!rawToken) {
+      return res.status(400).send({code: 400, message: "Token không hợp lệ"});
+    }
+
+    const tokenHash = crypto.createHash("sha256").update(String(rawToken)).digest("hex");
+
+    const userResult = await QueryDatabase(
+      `SELECT id, reset_token_expires FROM "users" WHERE reset_token = $1`,
+      [tokenHash]
+    );
+
+    if (!userResult.rows.length) {
+      return res.status(400).send({code: 400, message: "Link đặt lại mật khẩu không hợp lệ hoặc đã được sử dụng"});
+    }
+
+    const user = userResult.rows[0];
+    if (!user.reset_token_expires || new Date(user.reset_token_expires) < new Date()) {
+      return res.status(400).send({code: 400, expired: true, message: "Link đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu lại."});
+    }
+
+    return res.status(200).send({code: 200, valid: true});
+  } catch (error) {
+    logger.error(error);
+    return res.status(500).send({code: 500, message: "Lỗi máy chủ nội bộ"});
+  }
+};
+
 module.exports = {
   SignUp,
   Login,
@@ -505,4 +557,5 @@ module.exports = {
   verifyEmail,
   ForgotPassword,
   ResetPassword,
+  ValidateResetToken,
 };

@@ -1,4 +1,4 @@
-const {Login, RefreshToken, SignUp, verifyEmail, ForgotPassword, ResetPassword} = require("../controllers/auth/auth.controller");
+const {Login, RefreshToken, SignUp, verifyEmail, ForgotPassword, ResetPassword, ValidateResetToken} = require("../controllers/auth/auth.controller");
 const ChangeRoleUser = require("../controllers/users/changeRoleUser.controller");
 const CreateUser = require("../controllers/users/createUser.controller");
 const DeleteUser = require("../controllers/users/deleteUser.controller");
@@ -80,6 +80,7 @@ const router = (router, opts, next) => {
   router.post("/signup", SignUp);
   router.get("/verify-email/:userId", verifyEmail);
   router.post("/forgot-password", ForgotPassword);
+  router.get("/validate-reset-token/:token", ValidateResetToken);
   router.post("/reset-password", ResetPassword);
 
   // User

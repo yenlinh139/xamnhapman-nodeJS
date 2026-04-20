@@ -21,6 +21,24 @@ const normalizeVietnamese = (text) => {
 
 const normalizeSqlExpr = (columnName) => `LOWER(TRANSLATE(${columnName}, '${VIETNAMESE_FROM}', '${VIETNAMESE_TO}'))`;
 
+// Thứ tự ưu tiên hiển thị kết quả tìm kiếm
+const SEARCH_PRIORITY = {
+  iot_station: 1,
+  diem_do_man: 2,
+  khi_tuong_thuy_van: 3,
+  ho_chua: 4,
+  cttl_cong: 5,
+  cttl_tram_bom: 5,
+  cttl_de_bao: 5,
+  cttl_kenh_muong: 5,
+  cttl_2030_noi_dong: 5,
+  cttl_2030_nong_thon_moi: 5,
+  cttl_2030_vung_thuy_loi: 5,
+  cttl_2030_vung_he_thong: 5,
+  xa: 6,
+  huyen: 7,
+};
+
 const GetSearchAll = async (req, reply) => {
   try {
     const {id} = req.params;
@@ -30,7 +48,6 @@ const GetSearchAll = async (req, reply) => {
       return reply.code(400).send({code: 400, message: "ID là bắt buộc"});
     }
 
-    // Decode URL và sanitize input
     const decodedSearchTerm = decodeURIComponent(id).trim();
     if (decodedSearchTerm.length < 1) {
       return reply.code(400).send({code: 400, message: "Search term không được rỗng"});
@@ -38,119 +55,319 @@ const GetSearchAll = async (req, reply) => {
 
     const normalizedSearchTerm = normalizeVietnamese(decodedSearchTerm).toLowerCase();
 
-    // Check cache
-    const cacheKey = `search_all_${normalizedSearchTerm}_${limit}`;
+    const cacheKey = `search_all_v2_${normalizedSearchTerm}_${limit}`;
     const cached = searchCache.get(cacheKey);
     if (cached) {
-      console.log(`🎯 Cache hit for search: "${decodedSearchTerm}"`);
       return reply.code(200).send(cached);
     }
 
-    const limitVal = Math.min(parseInt(limit), 100); // Max 100 records
-    console.log(`🔍 Searching for: "${decodedSearchTerm}" (limit: ${limitVal})`);
-    let results = [];
-
-    // Tìm kiếm không dấu và không phân biệt hoa thường
+    const limitVal = Math.min(parseInt(limit), 100);
     const searchPattern = `%${normalizedSearchTerm}%`;
-    const tenHuyenExpr = normalizeSqlExpr('"tenHuyen"');
-    const tenXaExpr = normalizeSqlExpr('"tenXa"');
-    const tenDiemExpr = normalizeSqlExpr('"TenDiem"');
-    const tenTramExpr = normalizeSqlExpr('"TenTram"');
-    const stationNameExpr = normalizeSqlExpr("station_name");
-    const stationCodeExpr = normalizeSqlExpr("station_code");
+
+    // Helper tạo biểu thức SQL normalize không dấu
+    const n = (col) => normalizeSqlExpr(col);
 
     const queryTasks = [
-      // Query Huyện
-      QueryDatabase(
-        `
-        SELECT "maHuyen" AS mahuyen, "tenHuyen" AS tenhuyen,
-               "dienTichTuNhien" AS dientichtunhien,
-               "SHAPE_Length" AS shape_length,
-               "SHAPE_Area" AS shape_area,
-               ST_AsGeoJSON(geom)::json AS geom,
-               'huyen' AS type
-        FROM hochiminh."DiaPhanHuyen"
-        WHERE "maHuyen" = $1 OR ${tenHuyenExpr} LIKE $2
-        ORDER BY "tenHuyen"
-        LIMIT $3
-      `,
+      // 1. Trạm IoT — apiRef: /iot/stations
+      QueryDatabase(`
+        SELECT
+          serial_number          AS id,
+          station_name           AS name,
+          latitude               AS lat,
+          longitude              AS lng,
+          'iot_station'          AS type,
+          '/iot/stations'        AS "apiRef",
+          serial_number          AS "SerialNumber",
+          station_name           AS "StationName",
+          station_code           AS "StationCode",
+          station_type           AS "StationType",
+          status                 AS "Status",
+          frequency              AS "TanSuat",
+          time_period            AS "ThoiGian"
+        FROM iot_system.iot_stations
+        WHERE serial_number = $1
+           OR ${n("station_name")} LIKE $2
+           OR ${n("station_code")} LIKE $2
+        ORDER BY station_name LIMIT $3`,
         [decodedSearchTerm, searchPattern, limitVal],
       ),
 
-      // Query Xã
-      QueryDatabase(
-        `
-        SELECT "maXa" AS maxa,
-               "tenXa" AS tenxa,
-               "maHuyen" AS mahuyen,
-               "tenHuyen" AS tenhuyen,
-               "dienTichTuNhien" AS dientichtunhien,
-               "SHAPE_Length" AS shape_length,
-               "SHAPE_Area" AS shape_area,
-               ST_AsGeoJSON(geom)::json AS geom,
-               'xa' AS type
-        FROM hochiminh."DiaPhanXa"
-        WHERE "maXa" = $1 OR "maHuyen" = $1 OR
-            ${tenXaExpr} LIKE $2 OR
-            ${tenHuyenExpr} LIKE $2
-        ORDER BY "tenXa", "tenHuyen"
-        LIMIT $3
-      `,
-        [decodedSearchTerm, searchPattern, limitVal],
-      ),
-
-      // Query Điểm đo mặn
-      QueryDatabase(
-        `
-        SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai", "ThoiGian", "TanSuat", 'diem_do_man' AS type
+      // 2. Điểm đo mặn — apiRef: /salinity-points
+      QueryDatabase(`
+        SELECT
+          "KiHieu"               AS id,
+          "TenDiem"              AS name,
+          "ViDo"                 AS lat,
+          "KinhDo"               AS lng,
+          'diem_do_man'          AS type,
+          '/salinity-points'     AS "apiRef",
+          "KiHieu",
+          "TenDiem",
+          "KinhDo",
+          "ViDo",
+          "PhanLoai",
+          "ThoiGian",
+          "TanSuat"
         FROM hochiminh."DiemDoMan"
-        WHERE "KiHieu" = $1 OR ${tenDiemExpr} LIKE $2
-        ORDER BY "TenDiem"
-        LIMIT $3
-      `,
+        WHERE "KiHieu" = $1 OR ${n('"TenDiem"')} LIKE $2
+        ORDER BY "TenDiem" LIMIT $3`,
         [decodedSearchTerm, searchPattern, limitVal],
       ),
 
-      // Query Trạm khí tượng thủy văn
-      QueryDatabase(
-        `
-        SELECT "KiHieu", "TenTram", "KinhDo", "ViDo", "PhanLoai" AS "LoaiTram", 'khi_tuong_thuy_van' AS type
+      // 3. Trạm KTTV — apiRef: /hydrometeorology-stations
+      QueryDatabase(`
+        SELECT
+          "KiHieu"                      AS id,
+          "TenTram"                     AS name,
+          "ViDo"                        AS lat,
+          "KinhDo"                      AS lng,
+          'khi_tuong_thuy_van'          AS type,
+          '/hydrometeorology-stations'  AS "apiRef",
+          "KiHieu",
+          "TenTram",
+          "KinhDo",
+          "ViDo",
+          "PhanLoai",
+          "YeuTo",
+          "ThoiGian",
+          "TanSuat"
         FROM hochiminh."TramKTTV"
-        WHERE "KiHieu" = $1 OR ${tenTramExpr} LIKE $2
-        ORDER BY "TenTram"
-        LIMIT $3
-      `,
+        WHERE "KiHieu" = $1 OR ${n('"TenTram"')} LIKE $2
+        ORDER BY "TenTram" LIMIT $3`,
         [decodedSearchTerm, searchPattern, limitVal],
       ),
 
-      // Query Trạm IoT
-      QueryDatabase(
-        `
-          SELECT serial_number AS "SerialNumber",
-                 station_name AS "StationName",
-                 station_code AS "StationCode",
-                 latitude AS latitude,
-                 longitude AS longitude,
-                 latitude AS vido_decimal,
-                 longitude AS kinhdo_decimal,
-                 station_type AS "StationType",
-                 frequency AS "TanSuat",
-                 time_period AS "ThoiGian",
-                 status AS "Status",
-                 'iot_station' AS type
-          FROM iot_system.iot_stations
-          WHERE serial_number = $1
-             OR ${stationNameExpr} LIKE $2
-             OR ${stationCodeExpr} LIKE $3
-          ORDER BY station_name
-          LIMIT $4
-        `,
-        [decodedSearchTerm, searchPattern, searchPattern, limitVal],
+      // 4. Hồ chứa — apiRef: /reservoir-points
+      QueryDatabase(`
+        SELECT
+          "KiHieu"               AS id,
+          "TenHo"                AS name,
+          "ViDo"                 AS lat,
+          "KinhDo"               AS lng,
+          'ho_chua'              AS type,
+          '/reservoir-points'    AS "apiRef",
+          "KiHieu",
+          "TenHo",
+          "KinhDo",
+          "ViDo",
+          "YeuTo",
+          "ThoiGian",
+          "TanSuat"
+        FROM hochiminh."HoChua"
+        WHERE "KiHieu" = $1 OR ${n('"TenHo"')} LIKE $2
+        ORDER BY "TenHo" LIMIT $3`,
+        [decodedSearchTerm, searchPattern, limitVal],
+      ),
+
+      // 5a. CTTL 2023 — Cống
+      QueryDatabase(`
+        SELECT
+          "Id"::text              AS id,
+          "TenCongDap"            AS name,
+          ST_Y(ST_Centroid(geom)) AS lat,
+          ST_X(ST_Centroid(geom)) AS lng,
+          'cttl_cong'             AS type,
+          NULL                    AS "apiRef",
+          "TenCongDap",
+          "LoaiCongTrinh",
+          "CumCongTrinh",
+          "HinhThuc",
+          "MucTieuNhiemVu",
+          "DienTichPhucVu_ha",
+          "CapCongTrinh",
+          "DonViQuanLy",
+          "NamSuDung"
+        FROM hochiminh."CTTL_2023_Cong"
+        WHERE ${n('"TenCongDap"')} LIKE $1
+        ORDER BY "TenCongDap" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 5b. CTTL 2023 — Trạm bơm
+      QueryDatabase(`
+        SELECT
+          "Id"::text              AS id,
+          "TenTramBom"            AS name,
+          ST_Y(ST_Centroid(geom)) AS lat,
+          ST_X(ST_Centroid(geom)) AS lng,
+          'cttl_tram_bom'         AS type,
+          NULL                    AS "apiRef",
+          "TenTramBom",
+          "Loai",
+          "CongSuat",
+          "MucTieuNhiemVu",
+          "DienTichPhucVu_ha",
+          "HeThongCongTrinhThuyLoi",
+          "DonViQuanLy",
+          "NamSuDung"
+        FROM hochiminh."CTTL_2023_TramBom"
+        WHERE ${n('"TenTramBom"')} LIKE $1
+        ORDER BY "TenTramBom" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 5c. CTTL 2023 — Đê bao / Bờ bao
+      QueryDatabase(`
+        SELECT
+          "Id"::text              AS id,
+          "TenDeBao"              AS name,
+          ST_Y(ST_Centroid(geom)) AS lat,
+          ST_X(ST_Centroid(geom)) AS lng,
+          'cttl_de_bao'           AS type,
+          NULL                    AS "apiRef",
+          "TenDeBao",
+          "Loai",
+          "ChieuDai_m",
+          "CaoTrinhDinh",
+          "MucTieuNhiemVu",
+          "DienTichPhucVu_ha",
+          "CapDe",
+          "DonViQuanLy",
+          "NamSuDung"
+        FROM hochiminh."CTTL_2023_DeBao_BoBao"
+        WHERE ${n('"TenDeBao"')} LIKE $1
+        ORDER BY "TenDeBao" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 5d. CTTL 2023 — Kênh mương
+      QueryDatabase(`
+        SELECT
+          "Id"::text              AS id,
+          "TenKenhMuong"          AS name,
+          ST_Y(ST_Centroid(geom)) AS lat,
+          ST_X(ST_Centroid(geom)) AS lng,
+          'cttl_kenh_muong'       AS type,
+          NULL                    AS "apiRef",
+          "TenKenhMuong",
+          "LoaiKenh",
+          "CapKenh",
+          "ChieuDai_m",
+          "MucTieuNhiemVu",
+          "DienTichPhucVu_ha",
+          "HeThongCongTrinhThuyLoi",
+          "DonViQuanLy",
+          "NamSuDung"
+        FROM hochiminh."CTTL_2023_KenhMuong"
+        WHERE ${n('"TenKenhMuong"')} LIKE $1
+        ORDER BY "TenKenhMuong" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 5e. CTTL 2030 — Nội đồng
+      QueryDatabase(`
+        SELECT
+          "OBJECTID"::text        AS id,
+          "Ten"                   AS name,
+          ST_Y(ST_Centroid(geom)) AS lat,
+          ST_X(ST_Centroid(geom)) AS lng,
+          'cttl_2030_noi_dong'    AS type,
+          NULL                    AS "apiRef",
+          "Ten",
+          "VungThuyLoi"
+        FROM hochiminh."CTTL_2030_NoiDong"
+        WHERE ${n('"Ten"')} LIKE $1
+        ORDER BY "Ten" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 5f. CTTL 2030 — Nông thôn mới
+      QueryDatabase(`
+        SELECT
+          "OBJECTID"::text           AS id,
+          "Ten"                      AS name,
+          ST_Y(ST_Centroid(geom))    AS lat,
+          ST_X(ST_Centroid(geom))    AS lng,
+          'cttl_2030_nong_thon_moi'  AS type,
+          NULL                       AS "apiRef",
+          "Ten",
+          "VungThuyLoi"
+        FROM hochiminh."CTTL_2030_NongThonMoi"
+        WHERE ${n('"Ten"')} LIKE $1
+        ORDER BY "Ten" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 5g. CTTL 2030 — Vùng thủy lợi
+      QueryDatabase(`
+        SELECT
+          "OBJECTID"::text           AS id,
+          "VungThuyLoi"              AS name,
+          ST_Y(ST_Centroid(geom))    AS lat,
+          ST_X(ST_Centroid(geom))    AS lng,
+          'cttl_2030_vung_thuy_loi'  AS type,
+          NULL                       AS "apiRef",
+          "VungThuyLoi",
+          "MoTa"
+        FROM hochiminh."CTTL_2030_VungThuyLoi"
+        WHERE ${n('"VungThuyLoi"')} LIKE $1
+        ORDER BY "VungThuyLoi" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 5h. CTTL 2030 — Vùng hệ thống
+      QueryDatabase(`
+        SELECT
+          "OBJECTID"::text           AS id,
+          "Ten"                      AS name,
+          ST_Y(ST_Centroid(geom))    AS lat,
+          ST_X(ST_Centroid(geom))    AS lng,
+          'cttl_2030_vung_he_thong'  AS type,
+          NULL                       AS "apiRef",
+          "Ten",
+          "VungThuyLoi"
+        FROM hochiminh."CTTL_2030_Vung_HeThong"
+        WHERE ${n('"Ten"')} LIKE $1
+        ORDER BY "Ten" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 6. Xã
+      QueryDatabase(`
+        SELECT
+          "maXa"                        AS id,
+          "tenXa"                       AS name,
+          ST_Y(ST_Centroid(geom))       AS lat,
+          ST_X(ST_Centroid(geom))       AS lng,
+          'xa'                          AS type,
+          NULL                          AS "apiRef",
+          "maXa",
+          "tenXa",
+          "maHuyen",
+          "tenHuyen",
+          "dienTichTuNhien",
+          ST_AsGeoJSON(geom)::json      AS geom
+        FROM hochiminh."DiaPhanXa"
+        WHERE "maXa" = $1 OR "maHuyen" = $1
+           OR ${n('"tenXa"')} LIKE $2
+           OR ${n('"tenHuyen"')} LIKE $2
+        ORDER BY "tenXa", "tenHuyen" LIMIT $3`,
+        [decodedSearchTerm, searchPattern, limitVal],
+      ),
+
+      // 9. Huyện
+      QueryDatabase(`
+        SELECT
+          "maHuyen"                     AS id,
+          "tenHuyen"                    AS name,
+          ST_Y(ST_Centroid(geom))       AS lat,
+          ST_X(ST_Centroid(geom))       AS lng,
+          'huyen'                       AS type,
+          NULL                          AS "apiRef",
+          "maHuyen",
+          "tenHuyen",
+          "dienTichTuNhien",
+          ST_AsGeoJSON(geom)::json      AS geom
+        FROM hochiminh."DiaPhanHuyen"
+        WHERE "maHuyen" = $1 OR ${n('"tenHuyen"')} LIKE $2
+        ORDER BY "tenHuyen" LIMIT $3`,
+        [decodedSearchTerm, searchPattern, limitVal],
       ),
     ];
-    const settled = await Promise.allSettled(queryTasks);
 
-    // Combine results (do not fail all when one query fails)
+    const settled = await Promise.allSettled(queryTasks);
+    let results = [];
+
     settled.forEach((item) => {
       if (item.status === "fulfilled") {
         const queryResult = item.value;
@@ -162,21 +379,19 @@ const GetSearchAll = async (req, reply) => {
       }
     });
 
-    // Cache results
+    // Sắp xếp theo ưu tiên, cùng ưu tiên thì theo tên
+    results.sort((a, b) => {
+      const pa = SEARCH_PRIORITY[a.type] ?? 99;
+      const pb = SEARCH_PRIORITY[b.type] ?? 99;
+      if (pa !== pb) return pa - pb;
+      return (a.name || "").localeCompare(b.name || "", "vi");
+    });
+
     searchCache.set(cacheKey, results, 1800);
-
-    console.log(`📊 Found ${results.length} results for "${decodedSearchTerm}"`);
-    if (results.length > 0) {
-      console.log(`📋 Result types: ${[...new Set(results.map((r) => r.type))].join(", ")}`);
-    }
-
-    // Trả về mảng results trực tiếp
+    console.log(`📊 Found ${results.length} results for "${decodedSearchTerm}" | types: ${[...new Set(results.map((r) => r.type))].join(", ")}`);
     return reply.code(200).send(results);
   } catch (error) {
     logger.error("GetSearchAll error:", error);
-    console.error("❌ Search API Error:", error.message);
-
-    // Trả về empty array thay vì error để tránh crash frontend
     return reply.code(200).send([]);
   }
 };
