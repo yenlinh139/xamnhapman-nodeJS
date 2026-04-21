@@ -225,7 +225,7 @@ const SignUp = async (req, res) => {
             <p>Email này không thể nhận được phản hồi.</p>
             <p>Nếu bạn không đăng ký tài khoản, vui lòng bỏ qua email này.</p>
             <p><a href="#">Chính sách bảo mật</a> | <a href="#">Điều khoản sử dụng</a></p>
-            <p>© 2026 | WebGIS giám sát và cảnh báo xâm nhập mặn trên hệ thống sông, kênh, rạch tại TP. Hồ Chí Minh</p>
+            <p>© 2026 | WebGIS hỗ trợ quản lý, khai thác và cung cấp thông tin mặn tại Thành phố Hồ Chí Minh</p>
           </div>
         </div>
       </body>
