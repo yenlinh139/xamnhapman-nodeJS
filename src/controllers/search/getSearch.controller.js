@@ -35,8 +35,12 @@ const SEARCH_PRIORITY = {
   cttl_2030_nong_thon_moi: 5,
   cttl_2030_vung_thuy_loi: 5,
   cttl_2030_vung_he_thong: 5,
-  xa: 6,
-  huyen: 7,
+  giao_thong_line: 6,
+  giao_thong_polygon: 6,
+  thuy_he_line: 6,
+  thuy_he_polygon: 6,
+  xa: 7,
+  huyen: 8,
 };
 
 const GetSearchAll = async (req, reply) => {
@@ -71,24 +75,101 @@ const GetSearchAll = async (req, reply) => {
       // 1. Trạm IoT — apiRef: /iot/stations
       QueryDatabase(`
         SELECT
-          serial_number          AS id,
-          station_name           AS name,
-          latitude               AS lat,
-          longitude              AS lng,
-          'iot_station'          AS type,
-          '/iot/stations'        AS "apiRef",
-          serial_number          AS "SerialNumber",
-          station_name           AS "StationName",
-          station_code           AS "StationCode",
-          station_type           AS "StationType",
-          status                 AS "Status",
-          frequency              AS "TanSuat",
-          time_period            AS "ThoiGian"
-        FROM iot_system.iot_stations
-        WHERE serial_number = $1
-           OR ${n("station_name")} LIKE $2
-           OR ${n("station_code")} LIKE $2
-        ORDER BY station_name LIMIT $3`,
+          s.serial_number                               AS id,
+          s.station_name                               AS name,
+          s.latitude                                   AS lat,
+          s.longitude                                  AS lng,
+          'iot_station'                                AS type,
+          '/iot/stations'                              AS "apiRef",
+          s.serial_number                              AS "SerialNumber",
+          s.station_name                               AS "StationName",
+          s.station_code                               AS "StationCode",
+          s.station_type                               AS "StationType",
+          s.status                                     AS "Status",
+          s.frequency,
+          s.time_period,
+          s.note,
+          COALESCE(iot_counts.total_records, 0)        AS total_records,
+          iot_counts.start_time,
+          iot_counts.end_time,
+          '‰'                                          AS latest_salt_unit,
+          salt_stats.latest_hour_end_time,
+          salt_stats.previous_hour_end_time,
+          salt_stats.latest_hour_avg_salt,
+          salt_stats.previous_hour_avg_salt,
+          salt_stats.previous_day,
+          salt_stats.previous_day_avg_salt
+        FROM iot_system.iot_stations s
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*) AS total_records,
+            MIN(d_count.date_time) AS start_time,
+            MAX(d_count.date_time) AS end_time
+          FROM iot_system.iot_data d_count
+          WHERE d_count.serial_number = s.serial_number
+        ) iot_counts ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT
+            latest_slot.latest_hour_end_time,
+            (latest_slot.latest_hour_end_time - interval '1 hour') AS previous_hour_end_time,
+            (
+              SELECT ROUND(AVG(d1.salt_value)::numeric, 3)
+              FROM iot_system.iot_data d1
+              WHERE d1.serial_number = s.serial_number
+                AND d1.salt_value IS NOT NULL
+                AND (
+                  CASE
+                    WHEN d1.date_time = date_trunc('hour', d1.date_time)
+                      THEN date_trunc('hour', d1.date_time)
+                    ELSE date_trunc('hour', d1.date_time) + interval '1 hour'
+                  END
+                ) = latest_slot.latest_hour_end_time
+            ) AS latest_hour_avg_salt,
+            (
+              SELECT ROUND(AVG(d2.salt_value)::numeric, 3)
+              FROM iot_system.iot_data d2
+              WHERE d2.serial_number = s.serial_number
+                AND d2.salt_value IS NOT NULL
+                AND (
+                  CASE
+                    WHEN d2.date_time = date_trunc('hour', d2.date_time)
+                      THEN date_trunc('hour', d2.date_time)
+                    ELSE date_trunc('hour', d2.date_time) + interval '1 hour'
+                  END
+                ) = (latest_slot.latest_hour_end_time - interval '1 hour')
+            ) AS previous_hour_avg_salt,
+            (latest_slot.latest_hour_end_time::date - interval '1 day')::date AS previous_day,
+            (
+              SELECT ROUND(AVG(d3.salt_value)::numeric, 3)
+              FROM iot_system.iot_data d3
+              WHERE d3.serial_number = s.serial_number
+                AND d3.salt_value IS NOT NULL
+                AND d3.date_time::date = (latest_slot.latest_hour_end_time::date - interval '1 day')::date
+            ) AS previous_day_avg_salt
+          FROM (
+            SELECT MAX(
+              CASE
+                WHEN d0.date_time = date_trunc('hour', d0.date_time)
+                  THEN date_trunc('hour', d0.date_time)
+                ELSE date_trunc('hour', d0.date_time) + interval '1 hour'
+              END
+            ) AS latest_hour_end_time
+            FROM iot_system.iot_data d0
+            WHERE d0.serial_number = s.serial_number
+              AND d0.salt_value IS NOT NULL
+              AND (
+                CASE
+                  WHEN d0.date_time = date_trunc('hour', d0.date_time)
+                    THEN date_trunc('hour', d0.date_time)
+                  ELSE date_trunc('hour', d0.date_time) + interval '1 hour'
+                END
+              ) <= timezone('Asia/Ho_Chi_Minh', CURRENT_TIMESTAMP)
+          ) latest_slot
+        ) salt_stats ON TRUE
+        WHERE s.serial_number = $1
+           OR ${n("s.station_name")} LIKE $2
+           OR ${n("s.station_code")} LIKE $2
+        ORDER BY s.station_name LIMIT $3`,
         [decodedSearchTerm, searchPattern, limitVal],
       ),
 
@@ -363,10 +444,125 @@ const GetSearchAll = async (req, reply) => {
         ORDER BY "tenHuyen" LIMIT $3`,
         [decodedSearchTerm, searchPattern, limitVal],
       ),
+
+      // 10a. Giao thông — đường (line)
+      QueryDatabase(`
+        SELECT
+          "id"::text                    AS id,
+          "tenDuong"                   AS name,
+          ST_Y(ST_Centroid(geom))      AS lat,
+          ST_X(ST_Centroid(geom))      AS lng,
+          'giao_thong_line'            AS type,
+          NULL                         AS "apiRef",
+          "OBJECTID",
+          "tenDuong",
+          "chieuDai"
+        FROM hochiminh."GiaoThong_line"
+        WHERE ${n('"tenDuong"')} LIKE $1
+        ORDER BY "tenDuong" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 10b. Giao thông — đường (polygon)
+      QueryDatabase(`
+        SELECT
+          "id"::text                    AS id,
+          "TenDuong"                   AS name,
+          ST_Y(ST_Centroid(geom))      AS lat,
+          ST_X(ST_Centroid(geom))      AS lng,
+          'giao_thong_polygon'         AS type,
+          NULL                         AS "apiRef",
+          "OBJECTID",
+          "TenDuong",
+          "DoRong",
+          "ChieuDai",
+          "KetCau",
+          "CapQuanLy",
+          "TinhTrang"
+        FROM hochiminh."GiaoThong_polygon"
+        WHERE ${n('"TenDuong"')} LIKE $1
+        ORDER BY "TenDuong" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 11a. Thủy hệ — sông/kênh rạch (line)
+      QueryDatabase(`
+        SELECT
+          "id"::text                    AS id,
+          "Ten"                        AS name,
+          ST_Y(ST_Centroid(geom))      AS lat,
+          ST_X(ST_Centroid(geom))      AS lng,
+          'thuy_he_line'               AS type,
+          NULL                         AS "apiRef",
+          "OBJECTID",
+          "Ten",
+          "DiemDau",
+          "DiemCuoi",
+          "ChieuDai"
+        FROM hochiminh."ThuyHe_line"
+        WHERE ${n('"Ten"')} LIKE $1
+        ORDER BY "Ten" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
+
+      // 11b. Thủy hệ — ao/hồ/kênh rạch (polygon)
+      QueryDatabase(`
+        SELECT
+          "id"::text                    AS id,
+          "Ten"                        AS name,
+          ST_Y(ST_Centroid(geom))      AS lat,
+          ST_X(ST_Centroid(geom))      AS lng,
+          'thuy_he_polygon'            AS type,
+          NULL                         AS "apiRef",
+          "OBJECTID",
+          "Ten",
+          "phanLoai",
+          "doRong",
+          "doSau",
+          "ChatDay",
+          "TrangThai"
+        FROM hochiminh."ThuyHe_polygon"
+        WHERE ${n('"Ten"')} LIKE $1
+        ORDER BY "Ten" LIMIT $2`,
+        [searchPattern, limitVal],
+      ),
     ];
 
-    const settled = await Promise.allSettled(queryTasks);
+    const salinityStatsQuery = QueryDatabase(`
+      SELECT station_code,
+             MIN(date_val) AS start_date,
+             MAX(date_val) AS end_date,
+             COUNT(*)      AS total_records
+      FROM (
+        SELECT "Ngày" AS date_val, 'CRT'  AS station_code FROM hochiminh."DoMan" WHERE "CRT"  IS NOT NULL
+        UNION ALL
+        SELECT "Ngày",             'CTT'  FROM hochiminh."DoMan" WHERE "CTT"  IS NOT NULL
+        UNION ALL
+        SELECT "Ngày",             'COT'  FROM hochiminh."DoMan" WHERE "COT"  IS NOT NULL
+        UNION ALL
+        SELECT "Ngày",             'CKC'  FROM hochiminh."DoMan" WHERE "CKC"  IS NOT NULL
+        UNION ALL
+        SELECT "Ngày",             'KXAH' FROM hochiminh."DoMan" WHERE "KXAH" IS NOT NULL
+        UNION ALL
+        SELECT "Ngày",             'MNB'  FROM hochiminh."DoMan" WHERE "MNB"  IS NOT NULL
+        UNION ALL
+        SELECT "Ngày",             'PCL'  FROM hochiminh."DoMan" WHERE "PCL"  IS NOT NULL
+        UNION ALL
+        SELECT "Ngày",             'KXD2' FROM hochiminh."DoMan" WHERE "KXD2" IS NOT NULL
+      ) unpivoted
+      GROUP BY station_code
+    `).catch(() => null);
+
+    const [settled, salinityStatsRaw] = await Promise.all([Promise.allSettled(queryTasks), salinityStatsQuery]);
     let results = [];
+
+    // Build per-station salinity stats map
+    const salinityStatsMap = {};
+    if (salinityStatsRaw?.rowCount > 0) {
+      for (const row of salinityStatsRaw.rows) {
+        salinityStatsMap[row.station_code] = row;
+      }
+    }
 
     settled.forEach((item) => {
       if (item.status === "fulfilled") {
@@ -377,6 +573,20 @@ const GetSearchAll = async (req, reply) => {
       } else {
         logger.error("Search sub-query failed:", item.reason?.message || item.reason);
       }
+    });
+
+    // Enrich điểm đo mặn results with per-station data series stats
+    results = results.map((r) => {
+      if (r.type === "diem_do_man" && salinityStatsMap[r.KiHieu]) {
+        const stats = salinityStatsMap[r.KiHieu];
+        return {
+          ...r,
+          start_date: stats.start_date,
+          end_date: stats.end_date,
+          total_records: parseInt(stats.total_records),
+        };
+      }
+      return r;
     });
 
     // Sắp xếp theo ưu tiên, cùng ưu tiên thì theo tên
