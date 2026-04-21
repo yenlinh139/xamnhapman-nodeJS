@@ -218,7 +218,7 @@ const SignUp = async (req, res) => {
           </div>
           <div class="email-body">
             <p>Chào <b>${escapedName}</b>,</p>
-            <p>Để hoàn tất đăng kí tài khoản của bạn, vui lòng nhấn vào nút bên dưới [Xác thực email]</p>
+            <p>Để hoàn tất đăng kí tài khoản của bạn, vui lòng nhấn vào nút bên dưới:</p>
             <a href="${verifyUrl}" class="verify-button">Xác Thực Email</a>
           </div>
           <div class="email-footer">
@@ -460,12 +460,13 @@ const ForgotPassword = async (req, res) => {
           <div class="email-body">
             <p>Chào <b>${escape(user.name || email)}</b>,</p>
             <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn.</p>
-            <p>Để đặt lại mật khẩu tài khoản của bạn, vui lòng nhấn vào nút bên dưới [Đặt lại mật khẩu].</p>
+            <p>Để đặt lại mật khẩu tài khoản của bạn, vui lòng nhấn vào nút bên dưới:</p>
             <a href="${resetUrl}" class="reset-button">Đặt Lại Mật Khẩu</a>
-            <p style="margin-top:20px; font-size:13px; color:#888;">Nếu bạn không yêu cầu điều này, hãy bỏ qua email này. Mật khẩu của bạn sẽ không thay đổi.</p>
-          </div>
+            </div>
           <div class="email-footer">
-            <p>© 2026 | WebGIS giám sát và cảnh báo xâm nhập mặn trên hệ thống sông, kênh, rạch tại TP. Hồ Chí Minh</p>
+            <p>Email này không thể nhận được phản hồi.</p>
+            <p style="margin-top:20px; font-size:13px; color:#888;">Nếu bạn không yêu cầu điều này, hãy bỏ qua email này. Mật khẩu của bạn sẽ không thay đổi.</p>
+            <p>© 2026 | WebGIS hỗ trợ quản lý, khai thác và cung cấp thông tin mặn tại Thành phố Hồ Chí Minh</p>
           </div>
         </div>
       </body>
