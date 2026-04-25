@@ -14,9 +14,9 @@ module.exports = {
     await QueryDatabase(`
       INSERT INTO public.roles (id, slug, name) VALUES
         (-1, 'anonymous',   'Chưa đăng nhập'),
-        ( 0, 'guest',       'Khách'),
-        ( 2, 'technician',  'Kĩ thuật viên'),
-        ( 1, 'admin',       'Quản trị viên')
+        ( 0, 'admin',       'Quản trị viên'),
+        ( 1, 'technician',  'Kĩ thuật viên'),
+        ( 2, 'guest',       'Khách')
       ON CONFLICT (id) DO NOTHING;
     `);
 

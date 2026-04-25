@@ -20,7 +20,7 @@ const DeleteUser = async (req, res, next) => {
 
     // Write sql checkrole by id
     const checkRole = await QueryDatabase(`SELECT * FROM "users" WHERE id='${id}'`);
-    if (checkRole.rows[0].role == 1) {
+    if (checkRole.rows[0].role == 0) {
       res.status(401);
       return {code: 401, message: "Không thể xóa tài khoản quản trị viên"};
     }

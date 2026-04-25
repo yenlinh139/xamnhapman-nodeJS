@@ -117,7 +117,7 @@ const SignUp = async (req, res) => {
       INSERT INTO "users" (name, email, password, role, email_verified)
       VALUES ($1, $2, $3, $4, $5)
     `;
-    await QueryDatabase(insertUserSql, [escapedName, escapedEmail, hashedPassword, 0, false]);
+    await QueryDatabase(insertUserSql, [escapedName, escapedEmail, hashedPassword, 2, false]);
 
     // Tạo token xác thực email có hạn 24 giờ
     const verifyToken = crypto.randomBytes(32).toString("hex");

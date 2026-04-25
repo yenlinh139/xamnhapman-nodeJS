@@ -8,12 +8,9 @@ const VerifyToken = require("../middlewares/verifyToken");
 const GetFeedback = require("../controllers/feedback/getFeedback.controller");
 const CreateFeedback = require("../controllers/feedback/postFeedback.controller");
 const ChangeFeedback = require("../controllers/feedback/putFeedback.controller");
-const {
-  GetFeedbackStats,
-  GetFeedbackStatsByTime,
-  GetRecentFeedbacks,
-  GetDetailedRatingStats,
-} = require("../controllers/feedback/feedbackStats.controller");
+const DeleteFeedback = require("../controllers/feedback/deleteFeedback.controller");
+const {UploadFeedbackImage, GetUploadedImage, DeleteUploadedImage} = require("../controllers/feedback/uploadFeedbackImage.controller");
+const {upload} = require("../configs/uploadImage");
 const {
   GetSalinityPoints,
   GetSalinityOverview,
@@ -92,15 +89,14 @@ const router = (router, opts, next) => {
   router.put("/user/changerole", {onRequest: [VerifyToken]}, ChangeRoleUser);
 
   //Feedback
-  router.post("/feedback", CreateFeedback);
-  router.get("/feedback/:email", GetFeedback);
-  router.put("/feedback/:email", ChangeFeedback);
-
-  // Feedback Statistics - Public endpoints for building trust
-  router.get("/feedback/stats", GetFeedbackStats);
-  router.get("/feedback/stats/time", GetFeedbackStatsByTime);
-  router.get("/feedback/recent", GetRecentFeedbacks);
-  router.get("/feedback/stats/rating", GetDetailedRatingStats);
+  router.post("/upload/feedback-image", {onRequest: [VerifyToken], preHandler: upload.single("image")}, UploadFeedbackImage);
+  router.get("/uploads/:fileName", GetUploadedImage);
+  router.delete("/uploads/:fileName", {onRequest: [VerifyToken]}, DeleteUploadedImage);
+  router.post("/feedback", {onRequest: [VerifyToken]}, CreateFeedback);
+  router.get("/feedback", {onRequest: [VerifyToken]}, GetFeedback);
+  router.get("/feedback/:email", {onRequest: [VerifyToken]}, GetFeedback);
+  router.put("/feedback/:id", {onRequest: [VerifyToken]}, ChangeFeedback);
+  router.delete("/feedback/:id", {onRequest: [VerifyToken]}, DeleteFeedback);
 
   //salinity
   router.get("/salinity-points", GetSalinityPoints);
