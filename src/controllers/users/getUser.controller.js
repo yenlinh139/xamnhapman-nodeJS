@@ -7,11 +7,18 @@ const GetUser = async (req, res, next) => {
     const sql = `
       SELECT 
         u.*,
-        f.name as feedback_name,
-        f.message as feedback_message,
-        f.rating as feedback_rating
+        f.feedback_type as feedback_type,
+        f.content as feedback_content,
+        f.status as feedback_status,
+        f.created_at as feedback_created_at
       FROM "users" u
-      LEFT JOIN "feedbacks" f ON u.email = f.email;
+      LEFT JOIN LATERAL (
+        SELECT feedback_type, content, status, created_at
+        FROM "feedbacks"
+        WHERE user_id = u.id
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) f ON TRUE;
     `;
 
     const data = await QueryDatabase(sql);

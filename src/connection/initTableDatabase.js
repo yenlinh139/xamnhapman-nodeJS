@@ -33,9 +33,9 @@ const initUsersTable = async () => {
       INSERT INTO public.users
         ("email", "password", "name", "role", "email_verified", "birthdate", "phone")
       VALUES
-        ('admin@gmail.com','$2b$10$ZHJTMlQTwGfwUMCqBPDgx.F.PrbksZ6wH6FOHR4m2MY.7fKlN7uyC', 'admin', '1', TRUE, '1990-01-01', '0123456789'),
-        ('admin1@gmail.com','$2b$10$ZHJTMlQTwGfwUMCqBPDgx.F.PrbksZ6wH6FOHR4m2MY.7fKlN7uyC', 'admin1', '1', TRUE, '1992-02-02', '0987654321'),
-        ('test@gmail.com','$2b$10$ZHJTMlQTwGfwUMCqBPDgx.F.PrbksZ6wH6FOHR4m2MY.7fKlN7uyC', 'test', '0', TRUE, '1995-05-05', '0912345678');  
+        ('admin@gmail.com','$2b$10$ZHJTMlQTwGfwUMCqBPDgx.F.PrbksZ6wH6FOHR4m2MY.7fKlN7uyC', 'admin', '0', TRUE, '1990-01-01', '0123456789'),
+        ('admin1@gmail.com','$2b$10$ZHJTMlQTwGfwUMCqBPDgx.F.PrbksZ6wH6FOHR4m2MY.7fKlN7uyC', 'admin1', '0', TRUE, '1992-02-02', '0987654321'),
+        ('test@gmail.com','$2b$10$ZHJTMlQTwGfwUMCqBPDgx.F.PrbksZ6wH6FOHR4m2MY.7fKlN7uyC', 'test', '2', TRUE, '1995-05-05', '0912345678');  
     `;
     const checkUsers = await QueryDatabase(checkIsHaveUsers);
 
