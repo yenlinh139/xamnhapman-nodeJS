@@ -25,7 +25,6 @@ const {
   DeleteSalinityData,
   DeleteSalinityDataRange,
 } = require("../controllers/salinity/salinityData.controller");
-const {GetDailySalinityReportData, ExportSalinityReportPDF} = require("../controllers/salinity/salinityReport.controller");
 const {
   GetSearchAll,
   GetAllDistricts,
@@ -47,24 +46,10 @@ const {
   GetReservoirData,
   GetLatestReservoirData,
 } = require("../controllers/reservoir/reservoir.controller");
-const {
-  GetHydrometeorologySummaryStats,
-  GetRainfallStatsByStation,
-  GetWaterLevelStatsByStation,
-  GetMonthlyYearlyStats,
-  GetWeatherHydroAlerts,
-  GetHydrometeorologicalDashboard,
-} = require("../controllers/hydrometeorology/hydrometeorologyStats.controller");
-// const {cacheMiddleware} = require("../middlewares/cacheMiddleware"); // Tạm tắt để test
-const {
-  LogReportDownload,
-  GetReportHistory,
-  GetReportStatistics,
-  DeleteReportLog,
-} = require("../controllers/salinity/reportHistory.controller");
 
 // IoT Routes
 const iotRoutes = require("./iotRoutes");
+const { GetDailySalinityReportData } = require("../controllers/salinity/salinityReport.controller");
 
 const router = (router, opts, next) => {
   router.get("/", async (req, res) => {
@@ -111,24 +96,21 @@ const router = (router, opts, next) => {
   router.put("/salinity-data/:date", {onRequest: [VerifyToken]}, UpdateSalinityData);
   router.delete("/salinity-data/:date", {onRequest: [VerifyToken]}, DeleteSalinityData);
   router.delete("/salinity-data-range", {onRequest: [VerifyToken]}, DeleteSalinityDataRange);
-
-  // Salinity Reports
   router.get("/salinity-report/:date", GetDailySalinityReportData);
-  router.get("/salinity-report/:date/export-pdf", {onRequest: [VerifyToken]}, ExportSalinityReportPDF);
-  router.post("/log-download", {onRequest: [VerifyToken]}, LogReportDownload);
-  router.get("/history", {onRequest: [VerifyToken]}, GetReportHistory);
-  router.get("/statistics", {onRequest: [VerifyToken]}, GetReportStatistics);
-  router.delete("/history/:id", {onRequest: [VerifyToken]}, DeleteReportLog);
 
   //search
   router.get("/search/:id", GetSearchAll);
+  router.get("/search-date/:id", GetSearchDate);
+  
+  // Vị trí trạm/điểm đo
+  router.get("/station-position-salinity/:kihieu", GetStationPositionSalinity);
+  router.get("/station-position-hydrometeorology/:code", GetStationPositionHydrometeorology);
+
+  // Danh mục hành chính
   router.get("/districts", GetAllDistricts);
   router.get("/administrative/districts", GetAdministrativeDistricts);
   router.get("/administrative/communes/:maHuyen", GetAdministrativeCommunesByDistrict);
   router.get("/administrative/commune/:maXa", GetAdministrativeCommuneByCode);
-  router.get("/search-date/:id", GetSearchDate);
-  router.get("/station-position-salinity/:kihieu", GetStationPositionSalinity);
-  router.get("/station-position-hydrometeorology/:code", GetStationPositionHydrometeorology);
 
   //hydrometeorology
   router.get("/hydrometeorology-stations", GetHydrometeorology);
@@ -140,14 +122,6 @@ const router = (router, opts, next) => {
   router.get("/reservoir-overview/:code", GetReservoirOverview);
   router.get("/reservoir-data/:kihieu", GetReservoirData);
   router.get("/reservoir-latest", GetLatestReservoirData);
-
-  //hydrometeorology statistics
-  router.get("/hydrometeorology-stats/summary", GetHydrometeorologySummaryStats);
-  router.get("/hydrometeorology-stats/rainfall-by-station", GetRainfallStatsByStation);
-  router.get("/hydrometeorology-stats/water-level-by-station", GetWaterLevelStatsByStation);
-  router.get("/hydrometeorology-stats/monthly-yearly", GetMonthlyYearlyStats);
-  router.get("/hydrometeorology-stats/alerts", GetWeatherHydroAlerts);
-  router.get("/hydrometeorology-stats/dashboard", GetHydrometeorologicalDashboard);
 
   // IoT Data Routes
   router.register(iotRoutes, {prefix: "/iot"});
