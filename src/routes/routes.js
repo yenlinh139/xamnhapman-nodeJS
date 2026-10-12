@@ -50,6 +50,7 @@ const {
 // IoT Routes
 const iotRoutes = require("./iotRoutes");
 const { GetDailySalinityReportData } = require("../controllers/salinity/salinityReport.controller");
+const {GetForecastStations, GetLatestForecast} = require("../controllers/forecast/getForecast.controller");
 
 const router = (router, opts, next) => {
   router.get("/", async (req, res) => {
@@ -125,6 +126,10 @@ const router = (router, opts, next) => {
 
   // IoT Data Routes
   router.register(iotRoutes, {prefix: "/iot"});
+
+  // Forecast (dự báo độ mặn)
+  router.get("/forecast-stations", GetForecastStations);
+  router.get("/forecast-latest", GetLatestForecast);
 
   next();
 };
