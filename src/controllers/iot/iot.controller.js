@@ -591,7 +591,9 @@ const createIoTData = async (request, reply) => {
       return reply.code(400).send({success: false, message: "serial_number và date_time là bắt buộc"});
     }
 
-    const stationCheck = await queryDatabase(`SELECT serial_number FROM iot_system.iot_stations WHERE serial_number = $1`, [serial_number]);
+    const stationCheck = await queryDatabase(`SELECT serial_number FROM iot_system.iot_stations WHERE serial_number = $1`, [
+      serial_number,
+    ]);
     if (stationCheck.rows.length === 0) {
       return reply.code(404).send({success: false, message: `Không tìm thấy trạm ${serial_number}`});
     }
@@ -706,10 +708,9 @@ const deleteIoTData = async (request, reply) => {
   try {
     const {id} = request.params;
 
-    const result = await queryDatabase(
-      `DELETE FROM iot_system.iot_data WHERE id = $1 RETURNING id, serial_number, date_time`,
-      [id],
-    );
+    const result = await queryDatabase(`DELETE FROM iot_system.iot_data WHERE id = $1 RETURNING id, serial_number, date_time`, [
+      id,
+    ]);
 
     if (result.rows.length === 0) {
       return reply.code(404).send({success: false, message: `Không tìm thấy dữ liệu IoT id ${id}`});

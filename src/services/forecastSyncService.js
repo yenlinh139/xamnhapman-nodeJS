@@ -5,9 +5,13 @@ const {FORECAST_STATION_MAP, FORECAST_VALUE_COLUMNS} = require("../configs/forec
 
 /**
  * Forecast Sync Service
- * Lấy Forecast Result (contract v0.3) từ API dự báo XNM công khai và lưu vào
- * forecast_system.forecast_runs / forecast_system.forecast_values (dạng rộng,
- * giống hochiminh."DoMan": 1 dòng / mốc thời gian, 1 cột / trạm).
+ * Lấy Forecast Result (contract v0.4, xac nhan truc tiep tu response that ngay
+ * 2026-11-10 - payload la mang phang "rows[]", moi phan tu co {Datetime, Station,
+ * IssueDate, LeadDay, DailyModel, Profile, DailyForecast, do_man}; dung field
+ * "do_man" lam gia tri do man tai tung moc, "DailyForecast" chi la gia tri tong
+ * hop/ngay nen bo qua) va luu vao forecast_system.forecast_runs /
+ * forecast_system.forecast_values (dang rong, giong hochiminh."DoMan": 1 dong /
+ * moc thoi gian, 1 cot / tram).
  */
 class ForecastSyncService {
   constructor() {
@@ -36,34 +40,55 @@ class ForecastSyncService {
   }
 
   /**
-   * Chuyển payload gốc (1 mảng salinity_psu / trạm) thành các dòng dạng rộng
-   * (1 dòng / mốc thời gian, cột = mã trạm nội bộ).
+   * Chuyển payload gốc (mảng phẳng rows[], mỗi phần tử = 1 trạm tại 1 mốc) thành
+   * các dòng dạng rộng (1 dòng / mốc thời gian, cột = mã trạm nội bộ).
    */
   pivotToWideRows(payload) {
-    const {time_grid: timeGrid, stations} = payload;
-    const unmappedStations = [];
+    const sourceRows = payload.rows || [];
+    const unmappedStations = new Set();
+    const byTime = new Map();
 
-    const rows = timeGrid.map((thoiDiem) => {
-      const row = {ThoiDiem: thoiDiem};
-      for (const col of FORECAST_VALUE_COLUMNS) row[col] = null;
-      return row;
-    });
-
-    for (const station of stations || []) {
-      const mapping = FORECAST_STATION_MAP[station.station_code];
+    for (const sourceRow of sourceRows) {
+      const mapping = FORECAST_STATION_MAP[sourceRow.Station];
       if (!mapping) {
-        unmappedStations.push(station.station_code || station.station_id);
+        unmappedStations.add(sourceRow.Station);
         continue;
       }
-      station.salinity_psu.forEach((value, index) => {
-        if (rows[index]) rows[index][mapping.manualCode] = value;
-      });
+
+      if (!byTime.has(sourceRow.Datetime)) {
+        const row = {ThoiDiem: sourceRow.Datetime};
+        for (const col of FORECAST_VALUE_COLUMNS) row[col] = null;
+        byTime.set(sourceRow.Datetime, row);
+      }
+      byTime.get(sourceRow.Datetime)[mapping.manualCode] = sourceRow.do_man;
     }
 
-    return {rows, unmappedStations};
+    const rows = Array.from(byTime.values()).sort((a, b) => new Date(a.ThoiDiem).getTime() - new Date(b.ThoiDiem).getTime());
+
+    return {rows, unmappedStations: Array.from(unmappedStations)};
   }
 
-  async saveRun(payload) {
+  /**
+   * v0.4 khong con cac field top-level forecast_start_at/interval_hours/horizon_days/
+   * issued_at nhu v0.3 -> tu suy ra tu chinh cac dong da pivot (rows da sap xep theo
+   * thoi gian, cung 1 luoi thoi gian dung chung cho moi tram nen chi can lay 2 mốc dau
+   * de tinh khoang cach).
+   */
+  buildRunMeta(payload, rows) {
+    const forecastStartAt = rows[0]?.ThoiDiem || null;
+    const intervalHours =
+      rows.length >= 2
+        ? Math.round((new Date(rows[1].ThoiDiem).getTime() - new Date(rows[0].ThoiDiem).getTime()) / 3600000)
+        : null;
+    const horizonDays = intervalHours ? Math.round((rows.length * intervalHours) / 24) : null;
+
+    // Khong co issued_at tuong minh -> dung thoi diem artifact duoc tao lam gia tri gan dung.
+    const issuedAt = payload.artifact?.created_at || null;
+
+    return {forecastStartAt, intervalHours, horizonDays, issuedAt};
+  }
+
+  async saveRun(payload, meta) {
     await QueryDatabase(
       `INSERT INTO forecast_system.forecast_runs
         (run_id, schema_version, issued_at, forecast_timezone, forecast_start_at, interval_hours,
@@ -73,11 +98,11 @@ class ForecastSyncService {
       [
         payload.run_id,
         payload.schema_version,
-        payload.issued_at,
+        meta.issuedAt,
         payload.forecast_timezone,
-        payload.forecast_start_at,
-        payload.interval_hours,
-        payload.horizon_days,
+        meta.forecastStartAt,
+        meta.intervalHours,
+        meta.horizonDays,
         payload.station_count,
         payload.points_per_station,
         payload.total_points,
@@ -141,8 +166,9 @@ class ForecastSyncService {
     }
 
     const {rows, unmappedStations} = this.pivotToWideRows(payload);
+    const meta = this.buildRunMeta(payload, rows);
 
-    await this.saveRun(payload);
+    await this.saveRun(payload, meta);
     await this.saveWideRows(payload.run_id, rows);
 
     await this.logSync({

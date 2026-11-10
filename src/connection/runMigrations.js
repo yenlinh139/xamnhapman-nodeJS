@@ -15,7 +15,10 @@ const runMigrations = async () => {
     `);
 
     const migrationsDir = path.join(__dirname, "migrations");
-    const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith(".js")).sort();
+    const files = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".js"))
+      .sort();
 
     for (const file of files) {
       const migrationName = path.basename(file, ".js");

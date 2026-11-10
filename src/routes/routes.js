@@ -1,4 +1,12 @@
-const {Login, RefreshToken, SignUp, verifyEmail, ForgotPassword, ResetPassword, ValidateResetToken} = require("../controllers/auth/auth.controller");
+const {
+  Login,
+  RefreshToken,
+  SignUp,
+  verifyEmail,
+  ForgotPassword,
+  ResetPassword,
+  ValidateResetToken,
+} = require("../controllers/auth/auth.controller");
 const ChangeRoleUser = require("../controllers/users/changeRoleUser.controller");
 const CreateUser = require("../controllers/users/createUser.controller");
 const DeleteUser = require("../controllers/users/deleteUser.controller");
@@ -9,7 +17,11 @@ const GetFeedback = require("../controllers/feedback/getFeedback.controller");
 const CreateFeedback = require("../controllers/feedback/postFeedback.controller");
 const ChangeFeedback = require("../controllers/feedback/putFeedback.controller");
 const DeleteFeedback = require("../controllers/feedback/deleteFeedback.controller");
-const {UploadFeedbackImage, GetUploadedImage, DeleteUploadedImage} = require("../controllers/feedback/uploadFeedbackImage.controller");
+const {
+  UploadFeedbackImage,
+  GetUploadedImage,
+  DeleteUploadedImage,
+} = require("../controllers/feedback/uploadFeedbackImage.controller");
 const {upload} = require("../configs/uploadImage");
 const {
   GetSalinityPoints,
@@ -49,8 +61,17 @@ const {
 
 // IoT Routes
 const iotRoutes = require("./iotRoutes");
-const { GetDailySalinityReportData } = require("../controllers/salinity/salinityReport.controller");
+const {GetDailySalinityReportData} = require("../controllers/salinity/salinityReport.controller");
 const {GetForecastStations, GetLatestForecast} = require("../controllers/forecast/getForecast.controller");
+const {
+  GetForecastRuns,
+  GetForecastValues,
+  CreateForecastValue,
+  UpdateForecastValue,
+  DeleteForecastValues,
+  DeleteForecastRun,
+  SyncForecastNow,
+} = require("../controllers/forecast/forecastData.controller");
 
 const router = (router, opts, next) => {
   router.get("/", async (req, res) => {
@@ -102,7 +123,7 @@ const router = (router, opts, next) => {
   //search
   router.get("/search/:id", GetSearchAll);
   router.get("/search-date/:id", GetSearchDate);
-  
+
   // Vị trí trạm/điểm đo
   router.get("/station-position-salinity/:kihieu", GetStationPositionSalinity);
   router.get("/station-position-hydrometeorology/:code", GetStationPositionHydrometeorology);
@@ -130,6 +151,15 @@ const router = (router, opts, next) => {
   // Forecast (dự báo độ mặn)
   router.get("/forecast-stations", GetForecastStations);
   router.get("/forecast-latest", GetLatestForecast);
+
+  // Forecast CRUD (trang quản lý độ mặn)
+  router.get("/forecast-runs", GetForecastRuns);
+  router.delete("/forecast-runs/:runId", {onRequest: [VerifyToken]}, DeleteForecastRun);
+  router.get("/forecast-values", GetForecastValues);
+  router.post("/forecast-values", {onRequest: [VerifyToken]}, CreateForecastValue);
+  router.put("/forecast-values", {onRequest: [VerifyToken]}, UpdateForecastValue);
+  router.delete("/forecast-values", {onRequest: [VerifyToken]}, DeleteForecastValues);
+  router.post("/forecast-sync", {onRequest: [VerifyToken]}, SyncForecastNow);
 
   next();
 };

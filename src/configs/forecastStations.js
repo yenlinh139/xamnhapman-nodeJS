@@ -1,14 +1,15 @@
-// Mapping station của API dự báo ngoài (station_code: ST01..ST07) sang mã trạm
-// nội bộ (KiHieu trong hochiminh."DiemDoMan" / cột trong hochiminh."DoMan").
+// Mapping "Station" (chuỗi tên không dấu trong contract v0.4, field "rows[].Station")
+// sang mã trạm nội bộ (KiHieu trong hochiminh."DiemDoMan" / cột trong hochiminh."DoMan").
 // KXD2 (Kênh Xáng đứng 2) không có trong API dự báo -> has_forecast: false.
+// Xac nhan 2026-11-10: dung field "do_man" (khong phai "DailyForecast") lam gia tri do man.
 const FORECAST_STATION_MAP = {
-  ST01: {manualCode: "MNB", displayName: "Mũi Nhà Bè"},
-  ST02: {manualCode: "PCL", displayName: "Phà Cát Lái"},
-  ST03: {manualCode: "CTT", displayName: "Cầu Thủ Thiêm"},
-  ST04: {manualCode: "COT", displayName: "Cầu Ông Thìn"},
-  ST05: {manualCode: "CKC", displayName: "Cống Kênh C"},
-  ST06: {manualCode: "KXAH", displayName: "Kênh Xáng đứng 1"},
-  ST07: {manualCode: "CRT", displayName: "Cầu Rạch Tra"},
+  MuiNhaBe: {manualCode: "MNB", displayName: "Mũi Nhà Bè"},
+  PhaCatLai: {manualCode: "PCL", displayName: "Phà Cát Lái"},
+  CauThuThiem: {manualCode: "CTT", displayName: "Cầu Thủ Thiêm"},
+  CauOngThin: {manualCode: "COT", displayName: "Cầu Ông Thìn"},
+  CongKenhC: {manualCode: "CKC", displayName: "Cống Kênh C"},
+  KenhXang_AnHa: {manualCode: "KXAH", displayName: "Kênh Xáng đứng 1"},
+  CauRachTra: {manualCode: "CRT", displayName: "Cầu Rạch Tra"},
 };
 
 // Toàn bộ trạm đo mặn thủ công + cờ has_forecast, dùng cho FE biết trạm nào

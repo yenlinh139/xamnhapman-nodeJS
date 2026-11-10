@@ -26,7 +26,7 @@ const DeleteFeedback = async (req, reply) => {
         WHERE f.id = $1
         LIMIT 1;
       `,
-      [feedbackId]
+      [feedbackId],
     );
 
     if (feedbackResult.rowCount === 0) {

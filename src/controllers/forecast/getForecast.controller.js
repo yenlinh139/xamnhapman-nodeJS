@@ -1,15 +1,7 @@
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
 const {ALL_SALINITY_STATIONS_FORECAST_STATUS, FORECAST_VALUE_COLUMNS} = require("../../configs/forecastStations");
-
-// pg trả timestamptz dạng "2024-08-01 02:00:00+07" (custom type parser trong
-// database.connection.js) - chuẩn hoá về ISO 8601 có dấu ":" ở offset
-// ("...+07:00") để Date parser của mọi trình duyệt đều đọc được nhất quán.
-const toIsoWithOffset = (raw) => {
-  if (!raw) return raw;
-  const isoLike = raw.replace(" ", "T");
-  return /[+-]\d{2}$/.test(isoLike) ? `${isoLike}:00` : isoLike;
-};
+const {toIsoWithOffset, resolveReferenceNow} = require("../../utils/forecastTime");
 
 // Danh sách trạm + cờ hasForecast, để FE tự biết trạm nào chưa có dữ liệu dự báo
 const GetForecastStations = async (req, reply) => {
@@ -47,6 +39,14 @@ const GetLatestForecast = async (req, reply) => {
       values: valuesResult.rows.map((row) => row[manualCode]),
     }));
 
+    // Neu "hien tai" (thuc hoac override) nam TRUOC ca chuoi -> mốc đầu (tự nhiên, findIndex tra ve 0).
+    // Neu nam SAU ca chuoi (vd du lieu mau lich su, real "now" luon vuot qua) -> cung ve mốc đầu
+    // (dau cua lượt vừa đồng bộ) thay vi mốc cuoi, de moi lan co lượt chạy mới tu dong hien dung
+    // "dau" cua lượt do ma khong can chinh FORECAST_NOW_OVERRIDE tay theo tung lượt.
+    const referenceNow = resolveReferenceNow();
+    let currentIndex = timeGrid.findIndex((t) => new Date(t).getTime() >= referenceNow.getTime());
+    if (currentIndex === -1) currentIndex = 0;
+
     return reply.code(200).send({
       runId: run.run_id,
       schemaVersion: run.schema_version,
@@ -57,6 +57,10 @@ const GetLatestForecast = async (req, reply) => {
       isSynthetic: run.is_synthetic,
       timeGrid,
       stations,
+      // "Hiện tại" dùng để tô điểm mới nhất trên FE (popup bản đồ...). Xem resolveReferenceNow() ở trên.
+      referenceNow: referenceNow.toISOString(),
+      currentIndex,
+      currentTime: timeGrid[currentIndex] || null,
     });
   } catch (error) {
     logger.error(error);

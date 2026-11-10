@@ -16,7 +16,9 @@ const MAIL_PROVIDER_DEFAULTS = {
 };
 
 function getMailConfig() {
-  const provider = String(process.env.MAIL_PROVIDER || "gmail").trim().toLowerCase();
+  const provider = String(process.env.MAIL_PROVIDER || "gmail")
+    .trim()
+    .toLowerCase();
   const defaults = MAIL_PROVIDER_DEFAULTS[provider] || MAIL_PROVIDER_DEFAULTS.gmail;
 
   const host = String(process.env.MAIL_HOST || defaults.host || "").trim();
@@ -33,7 +35,10 @@ function getMailConfig() {
 
 function createTransporter() {
   const mailConfig = getMailConfig();
-  const enableDebug = String(process.env.MAIL_DEBUG || "").trim().toLowerCase() === "true";
+  const enableDebug =
+    String(process.env.MAIL_DEBUG || "")
+      .trim()
+      .toLowerCase() === "true";
 
   return nodemailer.createTransport({
     host: mailConfig.host,
@@ -124,10 +129,11 @@ const SignUp = async (req, res) => {
     const verifyTokenHash = crypto.createHash("sha256").update(verifyToken).digest("hex");
     const verifyTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 giờ
 
-    await QueryDatabase(
-      `UPDATE "users" SET email_verify_token = $1, email_verify_token_expires = $2 WHERE email = $3`,
-      [verifyTokenHash, verifyTokenExpires.toISOString(), escapedEmail]
-    );
+    await QueryDatabase(`UPDATE "users" SET email_verify_token = $1, email_verify_token_expires = $2 WHERE email = $3`, [
+      verifyTokenHash,
+      verifyTokenExpires.toISOString(),
+      escapedEmail,
+    ]);
 
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     const verifyUrl = `${frontendUrl}/verify-email/${encodeURIComponent(verifyToken)}`;
@@ -233,7 +239,7 @@ const SignUp = async (req, res) => {
     `;
 
     let emailSent = true;
-    let responseMessage = "Tạo tài khoản thành công. Vui lòng kiểm tra email để xác thực."
+    let responseMessage = "Tạo tài khoản thành công. Vui lòng kiểm tra email để xác thực.";
 
     try {
       await sendEmail(escapedEmail, subject, htmlContent);
@@ -266,7 +272,8 @@ const SignUp = async (req, res) => {
         response: mailError.response,
         message: mailError.message,
       });
-      responseMessage = "Tài khoản đã được tạo nhưng chưa gửi được email xác thực. Vui lòng thử lại sau hoặc liên hệ quản trị viên.";
+      responseMessage =
+        "Tài khoản đã được tạo nhưng chưa gửi được email xác thực. Vui lòng thử lại sau hoặc liên hệ quản trị viên.";
     }
 
     // Trả về phản hồi sau khi đăng ký thành công
@@ -294,10 +301,7 @@ const verifyEmail = async (req, res) => {
     const tokenHash = crypto.createHash("sha256").update(String(rawToken)).digest("hex");
 
     // Kiểm tra token và hạn sử dụng
-    const userResult = await QueryDatabase(
-      `SELECT * FROM "users" WHERE email_verify_token = $1`,
-      [tokenHash]
-    );
+    const userResult = await QueryDatabase(`SELECT * FROM "users" WHERE email_verify_token = $1`, [tokenHash]);
 
     if (!userResult.rows.length) {
       return res.status(400).send({code: 400, message: "Link xác thực không hợp lệ hoặc đã được sử dụng"});
@@ -307,13 +311,15 @@ const verifyEmail = async (req, res) => {
 
     // Kiểm tra hết hạn
     if (!user.email_verify_token_expires || new Date(user.email_verify_token_expires) < new Date()) {
-      return res.status(400).send({code: 400, expired: true, message: "Link xác thực đã hết hạn. Vui lòng đăng ký lại để nhận email mới."});
+      return res
+        .status(400)
+        .send({code: 400, expired: true, message: "Link xác thực đã hết hạn. Vui lòng đăng ký lại để nhận email mới."});
     }
 
     // Cập nhật email_verified và xóa token
     await QueryDatabase(
       `UPDATE "users" SET email_verified = TRUE, email_verify_token = NULL, email_verify_token_expires = NULL WHERE id = $1`,
-      [user.id]
+      [user.id],
     );
 
     return res.status(200).send({
@@ -417,7 +423,9 @@ const ForgotPassword = async (req, res) => {
     const userResult = await QueryDatabase(`SELECT * FROM "users" WHERE LOWER(email) = $1`, [email]);
     // Always return 200 to prevent email enumeration
     if (!userResult.rows.length) {
-      return res.status(200).send({code: 200, message: "Liên kết đặt lại mật khẩu đã được gửi, vui lòng kiểm tra email của bạn."});
+      return res
+        .status(200)
+        .send({code: 200, message: "Liên kết đặt lại mật khẩu đã được gửi, vui lòng kiểm tra email của bạn."});
     }
 
     const user = userResult.rows[0];
@@ -427,10 +435,11 @@ const ForgotPassword = async (req, res) => {
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    await QueryDatabase(
-      `UPDATE "users" SET reset_token = $1, reset_token_expires = $2 WHERE LOWER(email) = $3`,
-      [tokenHash, expires.toISOString(), email]
-    );
+    await QueryDatabase(`UPDATE "users" SET reset_token = $1, reset_token_expires = $2 WHERE LOWER(email) = $3`, [
+      tokenHash,
+      expires.toISOString(),
+      email,
+    ]);
 
     if (!isEmailConfigured()) {
       return res.status(500).send({code: 500, message: "Dịch vụ email chưa được cấu hình"});
@@ -495,10 +504,9 @@ const ResetPassword = async (req, res) => {
 
     const tokenHash = crypto.createHash("sha256").update(String(token)).digest("hex");
 
-    const userResult = await QueryDatabase(
-      `SELECT * FROM "users" WHERE reset_token = $1 AND reset_token_expires > NOW()`,
-      [tokenHash]
-    );
+    const userResult = await QueryDatabase(`SELECT * FROM "users" WHERE reset_token = $1 AND reset_token_expires > NOW()`, [
+      tokenHash,
+    ]);
 
     if (!userResult.rows.length) {
       return res.status(400).send({code: 400, message: "Token không hợp lệ hoặc đã hết hạn"});
@@ -508,10 +516,10 @@ const ResetPassword = async (req, res) => {
     const escapedPassword = escape(String(password));
     const hashedPassword = await hashPassword(escapedPassword);
 
-    await QueryDatabase(
-      `UPDATE "users" SET password = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2`,
-      [hashedPassword, user.id]
-    );
+    await QueryDatabase(`UPDATE "users" SET password = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2`, [
+      hashedPassword,
+      user.id,
+    ]);
 
     return res.status(200).send({code: 200, message: "Mật khẩu đã được đặt lại thành công"});
   } catch (error) {
@@ -530,10 +538,7 @@ const ValidateResetToken = async (req, res) => {
 
     const tokenHash = crypto.createHash("sha256").update(String(rawToken)).digest("hex");
 
-    const userResult = await QueryDatabase(
-      `SELECT id, reset_token_expires FROM "users" WHERE reset_token = $1`,
-      [tokenHash]
-    );
+    const userResult = await QueryDatabase(`SELECT id, reset_token_expires FROM "users" WHERE reset_token = $1`, [tokenHash]);
 
     if (!userResult.rows.length) {
       return res.status(400).send({code: 400, message: "Link đặt lại mật khẩu không hợp lệ hoặc đã được sử dụng"});

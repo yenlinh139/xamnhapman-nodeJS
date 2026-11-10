@@ -10,7 +10,7 @@ const FEEDBACK_TYPE_BY_CODE = {
 const FEEDBACK_TYPE_CODE_BY_LABEL = {
   "Báo cáo lỗi": 1,
   "Cải thiện hệ thống": 2,
-  "Khác": 3,
+  Khác: 3,
 };
 
 const normalizeFeedbackType = (value) => {
@@ -40,9 +40,15 @@ const CreateFeedback = async (req, reply) => {
       return reply.code(400).send({status: 400, message: "Thiếu dữ liệu yêu cầu"});
     }
 
-    const feedbackType = normalizeFeedbackType(req.body.feedbackType ?? req.body.feedback_type ?? req.body.feedbackTypeCode ?? req.body.feedback_type_code);
+    const feedbackType = normalizeFeedbackType(
+      req.body.feedbackType ?? req.body.feedback_type ?? req.body.feedbackTypeCode ?? req.body.feedback_type_code,
+    );
     const content = escape(String(req.body.content || req.body.message || "").trim());
-    const imageUrl = req.body.imageUrl ? escape(String(req.body.imageUrl).trim()) : req.body.image_url ? escape(String(req.body.image_url).trim()) : null;
+    const imageUrl = req.body.imageUrl
+      ? escape(String(req.body.imageUrl).trim())
+      : req.body.image_url
+        ? escape(String(req.body.image_url).trim())
+        : null;
 
     if (!feedbackType || !content) {
       return reply.code(400).send({code: 400, message: "Vui lòng điền đầy đủ loại góp ý và nội dung chi tiết"});
@@ -65,13 +71,7 @@ const CreateFeedback = async (req, reply) => {
       RETURNING id, user_id, feedback_type, content, image_url, created_at, status;
     `;
 
-    const createdFeedback = await QueryDatabase(sql, [
-      currentUser.id,
-      feedbackType,
-      content,
-      imageUrl,
-      "Chưa xem",
-    ]);
+    const createdFeedback = await QueryDatabase(sql, [currentUser.id, feedbackType, content, imageUrl, "Chưa xem"]);
 
     return reply.code(201).send({
       code: 201,
