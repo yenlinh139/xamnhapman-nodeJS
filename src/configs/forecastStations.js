@@ -1,7 +1,7 @@
 // Mapping "Station" (chuỗi tên không dấu trong contract v0.4, field "rows[].Station")
 // sang mã trạm nội bộ (KiHieu trong hochiminh."DiemDoMan" / cột trong hochiminh."DoMan").
 // KXD2 (Kênh Xáng đứng 2) không có trong API dự báo -> has_forecast: false.
-// Xac nhan 2026-11-10: dung field "do_man" (khong phai "DailyForecast") lam gia tri do man.
+// Xac nhan voi doi API 2026-11-10: dung field "DailyForecast" (khong phai "do_man") lam gia tri du bao chinh thuc.
 const FORECAST_STATION_MAP = {
   MuiNhaBe: {manualCode: "MNB", displayName: "Mũi Nhà Bè"},
   PhaCatLai: {manualCode: "PCL", displayName: "Phà Cát Lái"},

@@ -7,11 +7,13 @@ const {FORECAST_STATION_MAP, FORECAST_VALUE_COLUMNS} = require("../configs/forec
  * Forecast Sync Service
  * Lấy Forecast Result (contract v0.4, xac nhan truc tiep tu response that ngay
  * 2026-11-10 - payload la mang phang "rows[]", moi phan tu co {Datetime, Station,
- * IssueDate, LeadDay, DailyModel, Profile, DailyForecast, do_man}; dung field
- * "do_man" lam gia tri do man tai tung moc, "DailyForecast" chi la gia tri tong
- * hop/ngay nen bo qua) va luu vao forecast_system.forecast_runs /
- * forecast_system.forecast_values (dang rong, giong hochiminh."DoMan": 1 dong /
- * moc thoi gian, 1 cot / tram).
+ * IssueDate, LeadDay, DailyModel, Profile, DailyForecast, do_man}. Xac nhan lai
+ * 2026-11-10 (lan 2) voi doi API: gia tri du bao chinh thuc la "DailyForecast"
+ * (gia tri theo ngay - LeadDay, lap lai cho moi moc 2h trong cung ngay do), KHONG
+ * phai "do_man" (truoc do nham tuong la gia tri theo tung moc). Luu vao
+ * forecast_system.forecast_runs / forecast_system.forecast_values (dang rong,
+ * giong hochiminh."DoMan": 1 dong / moc thoi gian, 1 cot / tram) - gia tri se lap
+ * lai suot cac moc trong cung 1 ngay vi DailyForecast la gia tri cap ngay.
  */
 class ForecastSyncService {
   constructor() {
@@ -60,7 +62,7 @@ class ForecastSyncService {
         for (const col of FORECAST_VALUE_COLUMNS) row[col] = null;
         byTime.set(sourceRow.Datetime, row);
       }
-      byTime.get(sourceRow.Datetime)[mapping.manualCode] = sourceRow.do_man;
+      byTime.get(sourceRow.Datetime)[mapping.manualCode] = sourceRow.DailyForecast;
     }
 
     const rows = Array.from(byTime.values()).sort((a, b) => new Date(a.ThoiDiem).getTime() - new Date(b.ThoiDiem).getTime());
