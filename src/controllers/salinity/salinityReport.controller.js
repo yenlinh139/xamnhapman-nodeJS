@@ -121,7 +121,14 @@ const buildIotSalinityReportData = async (date, year, month) => {
     ORDER BY DATE(d.date_time) DESC
   `;
 
-  const [stationsResult, currentDayResult, previousDayResult, monthlyPrevYearResult, monthlyAllYearsResult, fallbackHistoryResult] = await Promise.all([
+  const [
+    stationsResult,
+    currentDayResult,
+    previousDayResult,
+    monthlyPrevYearResult,
+    monthlyAllYearsResult,
+    fallbackHistoryResult,
+  ] = await Promise.all([
     QueryDatabase(iotStationsQuery),
     QueryDatabase(currentDayQuery, [date]),
     QueryDatabase(previousDayQuery, [date]),
@@ -307,7 +314,8 @@ const GetDailySalinityReportData = async (req, reply) => {
     });
 
     const normalizedStations = stations.some((station) => station.currentDate !== null) ? stations : null;
-    const normalizedIotStations = Array.isArray(iotStations) && iotStations.some((station) => station.currentDate !== null) ? iotStations : null;
+    const normalizedIotStations =
+      Array.isArray(iotStations) && iotStations.some((station) => station.currentDate !== null) ? iotStations : null;
 
     if (!normalizedStations && !normalizedIotStations) {
       return reply.code(200).send(null);

@@ -9,7 +9,9 @@ const MAIL_PROVIDER_DEFAULTS = {
 };
 
 function getMailConfig() {
-  const provider = String(process.env.MAIL_PROVIDER || "gmail").trim().toLowerCase();
+  const provider = String(process.env.MAIL_PROVIDER || "gmail")
+    .trim()
+    .toLowerCase();
   const defaults = MAIL_PROVIDER_DEFAULTS[provider] || MAIL_PROVIDER_DEFAULTS.gmail;
 
   return {

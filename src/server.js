@@ -16,6 +16,7 @@ const allRouter = require("./routes/routes");
 const initTableDatabase = require("./connection/initTableDatabase");
 const redisClient = require("./connection/redis.connection");
 const iotSyncCron = require("./jobs/iotSyncCron");
+const forecastSyncCron = require("./jobs/forecastSyncCron");
 
 // Create Server
 var server;
@@ -107,6 +108,15 @@ app.ready(async () => {
     console.log("✓ IoT sync cron job started (every 3 hours)");
   } else {
     console.log("ℹ IoT sync cron job is disabled (ENABLE_IOT_SYNC_CRON=false)");
+  }
+
+  // Start Forecast Sync Cron Job (every 6 hours) - can be disabled when using dedicated worker
+  const enableForecastSyncCron = String(process.env.ENABLE_FORECAST_SYNC_CRON || "true").toLowerCase() === "true";
+  if (enableForecastSyncCron) {
+    forecastSyncCron.start();
+    console.log("✓ Forecast sync cron job started (every 6 hours)");
+  } else {
+    console.log("ℹ Forecast sync cron job is disabled (ENABLE_FORECAST_SYNC_CRON=false)");
   }
 
   // Start server

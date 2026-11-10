@@ -73,7 +73,8 @@ const GetSearchAll = async (req, reply) => {
 
     const queryTasks = [
       // 1. Trạm IoT — apiRef: /iot/stations
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           s.serial_number                               AS id,
           s.station_name                               AS name,
@@ -174,7 +175,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 2. Điểm đo mặn — apiRef: /salinity-points
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "KiHieu"               AS id,
           "TenDiem"              AS name,
@@ -196,7 +198,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 3. Trạm KTTV — apiRef: /hydrometeorology-stations
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "KiHieu"                      AS id,
           "TenTram"                     AS name,
@@ -219,7 +222,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 4. Hồ chứa — apiRef: /reservoir-points
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "KiHieu"               AS id,
           "TenHo"                AS name,
@@ -241,7 +245,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 5a. CTTL 2023 — Cống
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "Id"::text              AS id,
           "TenCongDap"            AS name,
@@ -265,7 +270,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 5b. CTTL 2023 — Trạm bơm
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "Id"::text              AS id,
           "TenTramBom"            AS name,
@@ -288,7 +294,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 5c. CTTL 2023 — Đê bao / Bờ bao
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "Id"::text              AS id,
           "TenDeBao"              AS name,
@@ -312,7 +319,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 5d. CTTL 2023 — Kênh mương
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "Id"::text              AS id,
           "TenKenhMuong"          AS name,
@@ -336,7 +344,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 5e. CTTL 2030 — Nội đồng
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "OBJECTID"::text        AS id,
           "Ten"                   AS name,
@@ -353,7 +362,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 5f. CTTL 2030 — Nông thôn mới
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "OBJECTID"::text           AS id,
           "Ten"                      AS name,
@@ -370,7 +380,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 5g. CTTL 2030 — Vùng thủy lợi
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "OBJECTID"::text           AS id,
           "VungThuyLoi"              AS name,
@@ -387,7 +398,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 5h. CTTL 2030 — Vùng hệ thống
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "OBJECTID"::text           AS id,
           "Ten"                      AS name,
@@ -404,7 +416,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 6. Xã
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "maXa"                        AS id,
           "tenXa"                       AS name,
@@ -427,7 +440,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 9. Huyện
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "maHuyen"                     AS id,
           "tenHuyen"                    AS name,
@@ -446,7 +460,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 10a. Giao thông — đường (line)
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "id"::text                    AS id,
           "tenDuong"                   AS name,
@@ -464,7 +479,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 10b. Giao thông — đường (polygon)
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "id"::text                    AS id,
           "TenDuong"                   AS name,
@@ -486,7 +502,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 11a. Thủy hệ — sông/kênh rạch (line)
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "id"::text                    AS id,
           "Ten"                        AS name,
@@ -506,7 +523,8 @@ const GetSearchAll = async (req, reply) => {
       ),
 
       // 11b. Thủy hệ — ao/hồ/kênh rạch (polygon)
-      QueryDatabase(`
+      QueryDatabase(
+        `
         SELECT
           "id"::text                    AS id,
           "Ten"                        AS name,
@@ -598,7 +616,9 @@ const GetSearchAll = async (req, reply) => {
     });
 
     searchCache.set(cacheKey, results, 1800);
-    console.log(`📊 Found ${results.length} results for "${decodedSearchTerm}" | types: ${[...new Set(results.map((r) => r.type))].join(", ")}`);
+    console.log(
+      `📊 Found ${results.length} results for "${decodedSearchTerm}" | types: ${[...new Set(results.map((r) => r.type))].join(", ")}`,
+    );
     return reply.code(200).send(results);
   } catch (error) {
     logger.error("GetSearchAll error:", error);

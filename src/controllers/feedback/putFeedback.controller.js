@@ -10,7 +10,7 @@ const FEEDBACK_TYPE_BY_CODE = {
 const FEEDBACK_TYPE_CODE_BY_LABEL = {
   "Báo cáo lỗi": 1,
   "Cải thiện hệ thống": 2,
-  "Khác": 3,
+  Khác: 3,
 };
 const FEEDBACK_STATUS_BY_CODE = {
   1: "Chưa xem",
@@ -67,7 +67,8 @@ const ChangeFeedback = async (req, reply) => {
       return reply.code(400).send({code: 400, message: "ID góp ý không hợp lệ"});
     }
 
-    const feedbackTypeRaw = req.body?.feedbackType ?? req.body?.feedback_type ?? req.body?.feedbackTypeCode ?? req.body?.feedback_type_code;
+    const feedbackTypeRaw =
+      req.body?.feedbackType ?? req.body?.feedback_type ?? req.body?.feedbackTypeCode ?? req.body?.feedback_type_code;
     const content = req.body?.content ?? req.body?.message;
     const imageUrl = req.body?.imageUrl ?? req.body?.image_url;
     const statusRaw = req.body?.status ?? req.body?.statusCode ?? req.body?.status_code;
@@ -98,7 +99,7 @@ const ChangeFeedback = async (req, reply) => {
         WHERE f.id = $1
         LIMIT 1;
       `,
-      [feedbackId]
+      [feedbackId],
     );
 
     if (checkFeedback.rowCount === 0) {
@@ -140,10 +141,7 @@ const ChangeFeedback = async (req, reply) => {
 
     params.push(feedbackId);
 
-    await QueryDatabase(
-      `UPDATE "feedbacks" SET ${setClauses.join(", ")} WHERE id = $${params.length}`,
-      params
-    );
+    await QueryDatabase(`UPDATE "feedbacks" SET ${setClauses.join(", ")} WHERE id = $${params.length}`, params);
 
     return reply.code(200).send({code: 200, message: "Cập nhật góp ý thành công"});
   } catch (error) {

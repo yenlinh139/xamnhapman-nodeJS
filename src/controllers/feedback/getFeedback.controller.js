@@ -4,7 +4,7 @@ const logger = require("../../loggers/loggers.config");
 const FEEDBACK_TYPE_CODE_BY_LABEL = {
   "Báo cáo lỗi": 1,
   "Cải thiện hệ thống": 2,
-  "Khác": 3,
+  Khác: 3,
 };
 const FEEDBACK_STATUS_CODE_BY_LABEL = {
   "Chưa xem": 1,
