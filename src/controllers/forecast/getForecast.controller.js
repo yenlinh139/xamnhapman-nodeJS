@@ -42,12 +42,16 @@ const GetLatestForecast = async (req, reply) => {
     }));
 
     // Neu "hien tai" (thuc hoac override) nam TRUOC ca chuoi -> mốc đầu (tự nhiên, findIndex tra ve 0).
-    // Neu nam SAU ca chuoi (vd du lieu mau lich su, real "now" luon vuot qua) -> cung ve mốc đầu
-    // (dau cua lượt vừa đồng bộ) thay vi mốc cuoi, de moi lan co lượt chạy mới tu dong hien dung
-    // "dau" cua lượt do ma khong can chinh FORECAST_NOW_OVERRIDE tay theo tung lượt.
+    // Neu nam SAU ca chuoi (vd du lieu mau lich su, real "now" luon vuot qua) -> lay mốc CUOI
+    // (dự báo mới nhất cua lượt chạy, khong fix o mốc dau) de FE luon hien dung gia tri du bao
+    // moi nhat hien co thay vi mot ngay co dinh.
     const referenceNow = resolveReferenceNow();
-    let currentIndex = timeGrid.findIndex((t) => new Date(t).getTime() >= referenceNow.getTime());
-    if (currentIndex === -1) currentIndex = 0;
+    const foundFutureIndex = timeGrid.findIndex((t) => new Date(t).getTime() >= referenceNow.getTime());
+    // hasFutureForecast = co it nhat 1 moc du bao >= "hien tai" thuc su (khong tinh fallback ben duoi).
+    // FE dung co nay de quyet dinh: uu tien mau/cap rui ro theo du bao (neu co moc tuong lai), nguoc lai
+    // (du lieu mau lich su, "hien tai" thuc da vuot qua het chuoi du bao) thi dung quan trac gan nhat.
+    const hasFutureForecast = foundFutureIndex !== -1;
+    const currentIndex = hasFutureForecast ? foundFutureIndex : timeGrid.length - 1;
 
     return reply.code(200).send({
       runId: run.run_id,
@@ -63,6 +67,7 @@ const GetLatestForecast = async (req, reply) => {
       referenceNow: referenceNow.toISOString(),
       currentIndex,
       currentTime: timeGrid[currentIndex] || null,
+      hasFutureForecast,
     });
   } catch (error) {
     logger.error(error);
