@@ -2,6 +2,7 @@ const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
 const XLSX = require("xlsx");
 const NodeCache = require("node-cache");
+const {FORECAST_STATION_MAP} = require("../../configs/forecastStations");
 
 // Cache với TTL 5 phút cho data ít thay đổi
 const cache = new NodeCache({stdTTL: 300, checkperiod: 60});
@@ -495,10 +496,99 @@ const ExportSalinityDataWithRange = async (req, reply) => {
   }
 };
 
+// GET /api/salinity-ai-export?startDate=...&endDate=...
+// Xuat toan bo du lieu quan trac do man (hochiminh."DoMan") dang rows phang {Date, Station, Salinity},
+// dung "Station" theo dung ten ma nhom AI dang dung o API du bao (FORECAST_STATION_MAP) de ho de doi chieu/
+// huan luyen lai mo hinh. Public, khong yeu cau dang nhap.
+const AI_STATION_NAME_BY_MANUAL_CODE = Object.fromEntries(
+  Object.entries(FORECAST_STATION_MAP).map(([station, mapping]) => [mapping.manualCode, station]),
+);
+
+const ExportSalinityObservationsForAI = async (req, reply) => {
+  try {
+    const {startDate, endDate} = req.query;
+
+    const whereClauses = [];
+    const params = [];
+    if (startDate) {
+      params.push(startDate);
+      whereClauses.push(`"Ngày" >= $${params.length}`);
+    }
+    if (endDate) {
+      params.push(endDate);
+      whereClauses.push(`"Ngày" <= $${params.length}`);
+    }
+    const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+    const [dataResult, stationsResult] = await Promise.all([
+      QueryDatabase(
+        `SELECT "Ngày", "CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2"
+         FROM hochiminh."DoMan"
+         ${whereSql}
+         ORDER BY "Ngày" ASC`,
+        params,
+      ),
+      QueryDatabase(
+        `SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo"
+         FROM hochiminh."DiemDoMan"
+         WHERE "KiHieu" = ANY($1)`,
+        [VALID_SALINITY_STATIONS],
+      ),
+    ]);
+
+    const stationMeta = {};
+    for (const s of stationsResult.rows) {
+      stationMeta[s.KiHieu] = s;
+    }
+
+    const rows = [];
+    for (const record of dataResult.rows) {
+      const rawDate = record["Ngày"];
+      const dateStr = rawDate instanceof Date ? rawDate.toISOString().slice(0, 10) : String(rawDate).slice(0, 10);
+
+      for (const code of VALID_SALINITY_STATIONS) {
+        const value = record[code];
+        if (value === null || value === undefined || value === "NULL") continue;
+
+        const salinity = Number(value);
+        if (!Number.isFinite(salinity)) continue;
+
+        rows.push({
+          Date: dateStr,
+          Station: AI_STATION_NAME_BY_MANUAL_CODE[code] || code,
+          ManualCode: code,
+          Salinity: salinity,
+        });
+      }
+    }
+
+    const stations = VALID_SALINITY_STATIONS.map((code) => ({
+      manualCode: code,
+      station: AI_STATION_NAME_BY_MANUAL_CODE[code] || code,
+      displayName: stationMeta[code]?.TenDiem || code,
+      longitude: stationMeta[code]?.KinhDo ?? null,
+      latitude: stationMeta[code]?.ViDo ?? null,
+    }));
+
+    return reply.code(200).send({
+      generatedAt: new Date().toISOString(),
+      unit: "‰",
+      filters: {startDate: startDate || null, endDate: endDate || null},
+      stations,
+      totalRecords: rows.length,
+      rows,
+    });
+  } catch (error) {
+    logger.error(error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
 module.exports = {
   GetSalinityPoints,
   GetSalinityOverview,
   GetSalinityData,
   ExportSalinityDataToExcel,
   ExportSalinityDataWithRange,
+  ExportSalinityObservationsForAI,
 };
