@@ -29,6 +29,7 @@ const {
   GetSalinityData,
   ExportSalinityDataToExcel,
   ExportSalinityDataWithRange,
+  ExportSalinityObservationsForAI,
 } = require("../controllers/salinity/getSalinity.controller");
 const {
   CreateSalinityData,
@@ -111,6 +112,7 @@ const router = (router, opts, next) => {
   router.get("/salinity-data/:kihieu", GetSalinityData);
   router.get("/salinity-export/:kihieu", ExportSalinityDataToExcel);
   router.post("/salinity-export", ExportSalinityDataWithRange);
+  router.get("/salinity-ai-export", ExportSalinityObservationsForAI);
 
   // SalinityData CRUD
   router.post("/salinity-data", {onRequest: [VerifyToken]}, CreateSalinityData);
