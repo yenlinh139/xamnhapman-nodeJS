@@ -132,8 +132,8 @@ const GetReservoirOverview = async (req, reply) => {
       total_records: parseInt(countResult.rows[0]?.total || 0),
       start_time: rangeResult.rows[0]?.start_date || null,
       end_time: rangeResult.rows[0]?.end_date || null,
-      latest_value: dataResult.rows[0]?.TongLuongXa || null,
-      latest_source: dataResult.rows[0]?.NguonDuLieu || null,
+      latest_value: dataResult.rows[0]?.TongLuongXa ?? null,
+      latest_source: dataResult.rows[0]?.NguonDuLieu ?? null,
       data: dataResult.rows,
     };
 

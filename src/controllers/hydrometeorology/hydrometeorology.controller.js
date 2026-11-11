@@ -94,6 +94,7 @@ const GetHydrometeorologyData = async (req, reply) => {
     }
 
     let query, countQuery;
+    let rangeQuery = null;
     const limitParam = `$${params.length + 1}`;
     const offsetParam = `$${params.length + 2}`;
 
@@ -111,7 +112,7 @@ const GetHydrometeorologyData = async (req, reply) => {
         FROM hochiminh."KhiTuong" k
         FULL OUTER JOIN hochiminh."ThuyVan" t ON DATE(k."Ngày") = DATE(t."Ngày")
         WHERE (k."Ngày" IS NOT NULL OR t."Ngày" IS NOT NULL) ${timeCondition}
-        ORDER BY COALESCE(k."Ngày", t."Ngày") ${order}
+        ORDER BY TO_DATE(COALESCE(k."Ngày", t."Ngày"), 'MM/DD/YYYY') ${order}
         LIMIT ${limitParam} OFFSET ${offsetParam}
       `;
 
@@ -135,7 +136,7 @@ const GetHydrometeorologyData = async (req, reply) => {
         SELECT "Ngày", ${columns}
         FROM hochiminh."${tableName}"
         WHERE 1=1 ${timeCondition}
-        ORDER BY "Ngày" ${order}
+        ORDER BY TO_DATE("Ngày", 'MM/DD/YYYY') ${order}
         LIMIT ${limitParam} OFFSET ${offsetParam}
       `;
 
@@ -144,15 +145,30 @@ const GetHydrometeorologyData = async (req, reply) => {
         FROM hochiminh."${tableName}"
         WHERE 1=1 ${timeCondition}
       `;
+
+      // Khoảng thời gian có số liệu của trạm (ngày cũ nhất - ngày mới nhất):
+      // chỉ tính các dòng có ít nhất một cột của trạm khác NULL.
+      // Cột "Ngày" là text dạng M/D/YYYY -> phải chuyển sang date trước khi MIN/MAX
+      // (so sánh chuỗi sẽ sai: "10/10/1990" < "9/9/2022")
+      const hasDataCondition = mapping.columns.map((col) => `"${col}" IS NOT NULL`).join(" OR ");
+      rangeQuery = `
+        SELECT
+          TO_CHAR(MIN(TO_DATE("Ngày", 'MM/DD/YYYY')), 'YYYY-MM-DD') AS start_date,
+          TO_CHAR(MAX(TO_DATE("Ngày", 'MM/DD/YYYY')), 'YYYY-MM-DD') AS end_date
+        FROM hochiminh."${tableName}"
+        WHERE (${hasDataCondition}) ${timeCondition}
+      `;
     }
 
     // Add limit and offset to params
     params.push(limitValue, offsetValue);
 
     // Execute queries in parallel
-    const [dataResult, countResult] = await Promise.all([
+    const filterParams = params.slice(0, -2); // Remove limit/offset for count/range
+    const [dataResult, countResult, rangeResult] = await Promise.all([
       QueryDatabase(query, params),
-      QueryDatabase(countQuery, params.slice(0, -2)), // Remove limit/offset for count
+      QueryDatabase(countQuery, filterParams),
+      rangeQuery ? QueryDatabase(rangeQuery, filterParams) : Promise.resolve(null),
     ]);
 
     const total = parseInt(countResult.rows[0]?.total || 0);
@@ -161,6 +177,8 @@ const GetHydrometeorologyData = async (req, reply) => {
     return reply.code(200).send({
       code: 200,
       data: dataResult.rows,
+      start_time: rangeResult?.rows?.[0]?.start_date || null,
+      end_time: rangeResult?.rows?.[0]?.end_date || null,
       pagination: {
         page: Math.floor(offsetValue / limitValue) + 1,
         limit: limitValue,
