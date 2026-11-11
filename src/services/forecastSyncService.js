@@ -1,7 +1,7 @@
 const axios = require("axios");
 const QueryDatabase = require("../utils/queryDatabase");
 const logger = require("../loggers/loggers.config");
-const {FORECAST_STATION_MAP, FORECAST_VALUE_COLUMNS} = require("../configs/forecastStations");
+const {FORECAST_STATION_MAP, FORECAST_VALUE_COLUMNS, FORECAST_DAILY_COLUMNS} = require("../configs/forecastStations");
 
 /**
  * Forecast Sync Service
@@ -60,9 +60,13 @@ class ForecastSyncService {
       if (!byTime.has(sourceRow.Datetime)) {
         const row = {ThoiDiem: sourceRow.Datetime};
         for (const col of FORECAST_VALUE_COLUMNS) row[col] = null;
+        for (const col of FORECAST_DAILY_COLUMNS) row[col] = null;
         byTime.set(sourceRow.Datetime, row);
       }
-      byTime.get(sourceRow.Datetime)[mapping.manualCode] = sourceRow.DailyForecast;
+      // do_man: gia tri theo moc 2h | DailyForecast: gia tri theo ngay (lap lai trong ngay)
+      const row = byTime.get(sourceRow.Datetime);
+      row[mapping.manualCode] = sourceRow.do_man;
+      row[`${mapping.manualCode}_Daily`] = sourceRow.DailyForecast;
     }
 
     const rows = Array.from(byTime.values()).sort((a, b) => new Date(a.ThoiDiem).getTime() - new Date(b.ThoiDiem).getTime());
@@ -118,7 +122,7 @@ class ForecastSyncService {
   async saveWideRows(runId, rows) {
     if (rows.length === 0) return;
 
-    const columns = ["run_id", "ThoiDiem", ...FORECAST_VALUE_COLUMNS];
+    const columns = ["run_id", "ThoiDiem", ...FORECAST_VALUE_COLUMNS, ...FORECAST_DAILY_COLUMNS];
     const columnList = columns.map((c) => `"${c}"`).join(", ");
     const valuePlaceholders = [];
     const params = [];
@@ -127,7 +131,12 @@ class ForecastSyncService {
       const base = rowIndex * columns.length;
       const placeholders = columns.map((_, colIndex) => `$${base + colIndex + 1}`);
       valuePlaceholders.push(`(${placeholders.join(", ")})`);
-      params.push(runId, row.ThoiDiem, ...FORECAST_VALUE_COLUMNS.map((c) => row[c]));
+      params.push(
+        runId,
+        row.ThoiDiem,
+        ...FORECAST_VALUE_COLUMNS.map((c) => row[c]),
+        ...FORECAST_DAILY_COLUMNS.map((c) => row[c]),
+      );
     });
 
     await QueryDatabase(

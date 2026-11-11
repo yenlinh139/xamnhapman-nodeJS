@@ -1,6 +1,7 @@
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
 const {ALL_SALINITY_STATIONS_FORECAST_STATUS, FORECAST_VALUE_COLUMNS} = require("../../configs/forecastStations");
+// values: do_man (theo moc 2h) - dung ve bieu do; dailyValues: DailyForecast (theo ngay, lap lai trong ngay)
 const {toIsoWithOffset, resolveReferenceNow} = require("../../utils/forecastTime");
 
 // Danh sách trạm + cờ hasForecast, để FE tự biết trạm nào chưa có dữ liệu dự báo
@@ -37,6 +38,7 @@ const GetLatestForecast = async (req, reply) => {
     const stations = FORECAST_VALUE_COLUMNS.map((manualCode) => ({
       manualCode,
       values: valuesResult.rows.map((row) => row[manualCode]),
+      dailyValues: valuesResult.rows.map((row) => row[`${manualCode}_Daily`]),
     }));
 
     // Neu "hien tai" (thuc hoac override) nam TRUOC ca chuoi -> mốc đầu (tự nhiên, findIndex tra ve 0).

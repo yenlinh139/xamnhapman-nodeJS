@@ -26,9 +26,12 @@ const ALL_SALINITY_STATIONS_FORECAST_STATUS = [
 ];
 
 const FORECAST_VALUE_COLUMNS = Object.values(FORECAST_STATION_MAP).map((s) => s.manualCode);
+// Cot luu gia tri DailyForecast (du bao theo ngay) ben canh cot do_man (theo moc 2h)
+const FORECAST_DAILY_COLUMNS = FORECAST_VALUE_COLUMNS.map((c) => `${c}_Daily`);
 
 module.exports = {
   FORECAST_STATION_MAP,
   ALL_SALINITY_STATIONS_FORECAST_STATUS,
   FORECAST_VALUE_COLUMNS,
+  FORECAST_DAILY_COLUMNS,
 };
