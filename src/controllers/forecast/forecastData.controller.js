@@ -1,7 +1,8 @@
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
 const forecastSyncService = require("../../services/forecastSyncService");
-const {FORECAST_VALUE_COLUMNS} = require("../../configs/forecastStations");
+const {FORECAST_VALUE_COLUMNS, FORECAST_DAILY_COLUMNS} = require("../../configs/forecastStations");
+const ALL_FORECAST_COLUMNS = [...FORECAST_VALUE_COLUMNS, ...FORECAST_DAILY_COLUMNS];
 const {toIsoWithOffset, resolveReferenceNow} = require("../../utils/forecastTime");
 
 const FORECAST_TIMEZONE = "Asia/Ho_Chi_Minh";
@@ -41,7 +42,7 @@ const toNullableNumber = (value) => {
 // Lấy giá trị các trạm từ body, chỉ giữ những cột được gửi lên
 const pickStationValues = (body) => {
   const values = {};
-  for (const col of FORECAST_VALUE_COLUMNS) {
+  for (const col of ALL_FORECAST_COLUMNS) {
     if (body[col] === undefined) continue;
     const numericValue = toNullableNumber(body[col]);
     if (Number.isNaN(numericValue)) {
@@ -121,7 +122,7 @@ const GetForecastValues = async (req, reply) => {
     }
 
     const whereCondition = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-    const columnList = FORECAST_VALUE_COLUMNS.map((c) => `"${c}"`).join(", ");
+    const columnList = ALL_FORECAST_COLUMNS.map((c) => `"${c}"`).join(", ");
 
     const [result, countResult] = await Promise.all([
       QueryDatabase(
