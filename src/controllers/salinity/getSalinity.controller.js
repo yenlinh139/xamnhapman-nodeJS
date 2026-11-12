@@ -334,11 +334,18 @@ const GetSalinityData = async (req, reply) => {
       `;
       params.push(limitVal, offsetVal);
     } else {
+      // LEFT JOIN hochiminh."ChiSoNuoc" de kem theo pH/Do dan dien/Do duc cua dung tram nay -
+      // bang moi chua co du lieu that nen 3 cot nay hien tra ve NULL, se tu dong co gia tri khi
+      // "ChiSoNuoc" duoc nhap lieu (xem migration 009_create_water_quality_table.js).
+      const kiHieuParam = `$${params.length + 1}`;
+      params.push(kihieu);
       query = `
-        SELECT "Ngày", "${kihieu}" AS "DoMan"
-        FROM hochiminh."DoMan"
-        WHERE "${kihieu}" IS NOT NULL ${whereClause}
-        ORDER BY "Ngày" DESC
+        SELECT d."Ngày", d."${kihieu}" AS "DoMan", c."pH", c."DoDanDien", c."DoDuc"
+        FROM hochiminh."DoMan" d
+        LEFT JOIN hochiminh."ChiSoNuoc" c
+          ON c."Ngày" = d."Ngày" AND c."KiHieu" = ${kiHieuParam}
+        WHERE d."${kihieu}" IS NOT NULL ${whereClause.replace(/"Ngày"/g, 'd."Ngày"')}
+        ORDER BY d."Ngày" DESC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `;
       params.push(limitVal, offsetVal);
@@ -520,12 +527,21 @@ const ExportSalinityObservationsForAI = async (req, reply) => {
     }
     const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
-    const [dataResult, stationsResult] = await Promise.all([
+    const [dataResult, waterQualityResult, stationsResult] = await Promise.all([
       QueryDatabase(
         `SELECT "Ngày", "CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2"
          FROM hochiminh."DoMan"
          ${whereSql}
          ORDER BY "Ngày" ASC`,
+        params,
+      ),
+      // Chi so chat luong nuoc moi (pH/Do dan dien/Do duc) - bang rieng hochiminh."ChiSoNuoc",
+      // chua co du lieu that nen hien tai luon tra ve mang rong, cac truong tuong ung se la null
+      // trong moi row cho toi khi bang nay duoc nhap lieu (xem migration 009).
+      QueryDatabase(
+        `SELECT "Ngày", "KiHieu", "pH", "DoDanDien", "DoDuc"
+         FROM hochiminh."ChiSoNuoc"
+         ${whereSql}`,
         params,
       ),
       QueryDatabase(
@@ -541,10 +557,18 @@ const ExportSalinityObservationsForAI = async (req, reply) => {
       stationMeta[s.KiHieu] = s;
     }
 
+    const toDateStr = (rawDate) =>
+      rawDate instanceof Date ? rawDate.toISOString().slice(0, 10) : String(rawDate).slice(0, 10);
+
+    const waterQualityByDateStation = {};
+    for (const record of waterQualityResult.rows) {
+      const key = `${toDateStr(record["Ngày"])}_${record["KiHieu"]}`;
+      waterQualityByDateStation[key] = record;
+    }
+
     const rows = [];
     for (const record of dataResult.rows) {
-      const rawDate = record["Ngày"];
-      const dateStr = rawDate instanceof Date ? rawDate.toISOString().slice(0, 10) : String(rawDate).slice(0, 10);
+      const dateStr = toDateStr(record["Ngày"]);
 
       for (const code of VALID_SALINITY_STATIONS) {
         const value = record[code];
@@ -553,11 +577,16 @@ const ExportSalinityObservationsForAI = async (req, reply) => {
         const salinity = Number(value);
         if (!Number.isFinite(salinity)) continue;
 
+        const waterQuality = waterQualityByDateStation[`${dateStr}_${code}`];
+
         rows.push({
-          Date: dateStr,
+          Datetime: `${dateStr}T00:00:00+07:00`,
           Station: AI_STATION_NAME_BY_MANUAL_CODE[code] || code,
           ManualCode: code,
-          Salinity: salinity,
+          do_man: salinity,
+          pH: waterQuality?.pH !== undefined ? waterQuality.pH : null,
+          do_dan_dien: waterQuality?.DoDanDien !== undefined ? waterQuality.DoDanDien : null,
+          do_duc: waterQuality?.DoDuc !== undefined ? waterQuality.DoDuc : null,
         });
       }
     }
@@ -572,7 +601,7 @@ const ExportSalinityObservationsForAI = async (req, reply) => {
 
     return reply.code(200).send({
       generatedAt: new Date().toISOString(),
-      unit: "‰",
+      units: {do_man: "‰", pH: null, do_dan_dien: "mS", do_duc: "NTU"},
       filters: {startDate: startDate || null, endDate: endDate || null},
       stations,
       totalRecords: rows.length,
