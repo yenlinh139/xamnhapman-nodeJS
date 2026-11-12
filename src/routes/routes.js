@@ -40,6 +40,13 @@ const {
   DeleteSalinityDataRange,
 } = require("../controllers/salinity/salinityData.controller");
 const {
+  GetSalinityDetailList,
+  GetSalinityDetailRange,
+  CreateSalinityDetail,
+  UpdateSalinityDetail,
+  DeleteSalinityDetail,
+} = require("../controllers/salinity/salinityDetail.controller");
+const {
   GetSearchAll,
   GetAllDistricts,
   GetAdministrativeDistricts,
@@ -123,6 +130,13 @@ const router = (router, opts, next) => {
   router.delete("/salinity-data/:date", {onRequest: [VerifyToken]}, DeleteSalinityData);
   router.delete("/salinity-data-range", {onRequest: [VerifyToken]}, DeleteSalinityDataRange);
   router.get("/salinity-report/:date", GetDailySalinityReportData);
+
+  // SalinityDetail (hochiminh."DoManChiTiet") - CRUD cho trang quan tri, tung lan do that (co gio)
+  router.get("/salinity-detail", GetSalinityDetailList);
+  router.get("/salinity-detail/range/:kihieu", GetSalinityDetailRange);
+  router.post("/salinity-detail", {onRequest: [VerifyToken]}, CreateSalinityDetail);
+  router.put("/salinity-detail/:id", {onRequest: [VerifyToken]}, UpdateSalinityDetail);
+  router.delete("/salinity-detail/:id", {onRequest: [VerifyToken]}, DeleteSalinityDetail);
 
   //search
   router.get("/search/:id", GetSearchAll);
