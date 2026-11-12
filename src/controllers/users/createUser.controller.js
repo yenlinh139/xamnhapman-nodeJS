@@ -12,10 +12,14 @@ const CreateUser = async (req, res, next) => {
     const email = escape(req.body.email);
     const name = escape(req.body.name);
     const password = escape(req.body.password);
-    const phone = escape(req.body.phone);
-    const role = escape(req.body.role);
+    // Số điện thoại không bắt buộc (khớp với CreateUserModal.jsx, chỉ Họ và tên/Email/Mật khẩu
+    // mới có dấu *) - escape(undefined) sẽ ra chuỗi "undefined" nên phải tự giữ null khi trống.
+    const phone = req.body.phone ? escape(req.body.phone) : null;
+    const VALID_ROLES = ["0", "1", "2"];
+    const requestedRole = String(req.body.role ?? "");
+    const role = VALID_ROLES.includes(requestedRole) ? requestedRole : "2";
 
-    if (!email || !name || !password || !phone) {
+    if (!email || !name || !password) {
       res.status(400);
       return {code: 400, message: "Vui lòng điền đầy đủ các trường bắt buộc"};
     }
@@ -35,8 +39,8 @@ const CreateUser = async (req, res, next) => {
     const hashedPassword = await hashPassword(password);
 
     const sql = `
-      INSERT INTO "users" (name, email, password , role, phone) 
-      VALUES ('${name}', '${email}', '${hashedPassword}','2', '${phone}');
+      INSERT INTO "users" (name, email, password , role, phone)
+      VALUES ('${name}', '${email}', '${hashedPassword}', '${role}', ${phone ? `'${phone}'` : "NULL"});
     `;
 
     await QueryDatabase(sql);
