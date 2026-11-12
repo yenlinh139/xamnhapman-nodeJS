@@ -27,6 +27,7 @@ const {
   GetSalinityPoints,
   GetSalinityOverview,
   GetSalinityData,
+  GetSalinityDataDetail,
   ExportSalinityDataToExcel,
   ExportSalinityDataWithRange,
   ExportSalinityObservationsForAI,
@@ -110,6 +111,7 @@ const router = (router, opts, next) => {
   router.get("/salinity-points", GetSalinityPoints);
   router.get("/salinity-overview/:code", GetSalinityOverview);
   router.get("/salinity-data/:kihieu", GetSalinityData);
+  router.get("/salinity-data/:kihieu/detail", GetSalinityDataDetail);
   router.get("/salinity-export/:kihieu", ExportSalinityDataToExcel);
   router.post("/salinity-export", ExportSalinityDataWithRange);
   router.get("/salinity-ai-export", ExportSalinityObservationsForAI);

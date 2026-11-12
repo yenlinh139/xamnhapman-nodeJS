@@ -364,6 +364,67 @@ const GetSalinityData = async (req, reply) => {
   }
 };
 
+// GET /api/salinity-data/:kihieu/detail
+// Tra ve TUNG lan do thuc te (hochiminh."DoManChiTiet", co the nhieu dong/ngay) de hien thi cot
+// "Thoi diem"/"Gio" that trong bang quan trac - khac voi GetSalinityData (tra ve gia tri trung
+// binh/ngay tu "DoMan", dung cho bieu do).
+const GetSalinityDataDetail = async (req, reply) => {
+  try {
+    const {kihieu} = req.params;
+    const {limit = 1000, offset = 0, startDate, endDate, orderBy = "DESC"} = req.query;
+
+    if (!kihieu || !VALID_SALINITY_STATIONS.includes(kihieu)) {
+      return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
+    }
+
+    const limitVal = Math.min(Math.max(parseInt(limit) || 1000, 1), 20000);
+    const offsetVal = Math.max(parseInt(offset) || 0, 0);
+    const order = String(orderBy).toLowerCase() === "asc" ? "ASC" : "DESC";
+
+    const params = [kihieu];
+    let whereClause = "";
+    if (startDate) {
+      params.push(startDate);
+      whereClause += ` AND "ThoiDiem" >= $${params.length}`;
+    }
+    if (endDate) {
+      params.push(endDate);
+      whereClause += ` AND "ThoiDiem" <= $${params.length}::date + interval '1 day'`;
+    }
+
+    const query = `
+      SELECT "ThoiDiem", "DoMan", "pH", "DoDanDien", "DoDuc"
+      FROM hochiminh."DoManChiTiet"
+      WHERE "KiHieu" = $1 ${whereClause}
+      ORDER BY "ThoiDiem" ${order}
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*) AS total
+      FROM hochiminh."DoManChiTiet"
+      WHERE "KiHieu" = $1 ${whereClause}
+    `;
+
+    const [dataResult, countResult] = await Promise.all([
+      QueryDatabase(query, [...params, limitVal, offsetVal]),
+      QueryDatabase(countQuery, params),
+    ]);
+
+    return reply.code(200).send({
+      data: dataResult.rows,
+      pagination: {
+        limit: limitVal,
+        offset: offsetVal,
+        total: parseInt(countResult.rows[0]?.total || 0),
+      },
+    });
+  } catch (error) {
+    logger.error(error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
 const ExportSalinityDataToExcel = async (req, reply) => {
   try {
     const {kihieu} = req.params;
@@ -615,6 +676,7 @@ module.exports = {
   GetSalinityPoints,
   GetSalinityOverview,
   GetSalinityData,
+  GetSalinityDataDetail,
   ExportSalinityDataToExcel,
   ExportSalinityDataWithRange,
   ExportSalinityObservationsForAI,
