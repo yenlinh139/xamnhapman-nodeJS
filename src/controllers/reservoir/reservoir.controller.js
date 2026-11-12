@@ -74,7 +74,9 @@ const GetReservoirOverview = async (req, reply) => {
       return reply.code(400).send({code: 400, message: "Mã hồ chứa không hợp lệ"});
     }
 
-    const limitValue = Math.min(Math.max(parseInt(limit) || 200, 1), 1000);
+    // Nâng trần lên 20000 (như hydrometeorology.controller.js) để biểu đồ lấy được trọn chuỗi số
+    // liệu hồ chứa (vài nghìn bản ghi/trạm), không bị cắt cụt theo giới hạn cũ (1000).
+    const limitValue = Math.min(Math.max(parseInt(limit) || 200, 1), 20000);
     const cacheKey = `reservoir_overview_${reservoirCode}_${startDate || "all"}_${endDate || "all"}_${limitValue}`;
     const cached = cache.get(cacheKey);
 
@@ -155,7 +157,7 @@ const GetReservoirData = async (req, reply) => {
     }
 
     const reservoirCode = decodeURIComponent(kihieu).trim().toUpperCase();
-    const limitValue = Math.min(Math.max(parseInt(limit) || 100, 1), 1000);
+    const limitValue = Math.min(Math.max(parseInt(limit) || 100, 1), 20000);
     const offsetValue = Math.max(parseInt(offset) || 0, 0);
     const order = String(orderBy).toLowerCase() === "asc" ? "ASC" : "DESC";
 

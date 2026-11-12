@@ -74,7 +74,9 @@ const GetHydrometeorologyData = async (req, reply) => {
     }
 
     // Validate và sanitize inputs
-    const limitValue = Math.min(Math.max(parseInt(limit), 1), 1000);
+    // Trạm khí tượng thủy văn dày nhất cũng chỉ ~13000 bản ghi (vd 35 năm số liệu ngày) - nâng trần
+    // lên 20000 để biểu đồ "Diễn biến" luôn lấy được trọn max-min thật của chuỗi, không bị cắt cụt.
+    const limitValue = Math.min(Math.max(parseInt(limit), 1), 20000);
     const offsetValue = Math.max(parseInt(offset), 0);
     const order = orderBy.toLowerCase() === "asc" ? "ASC" : "DESC";
 
