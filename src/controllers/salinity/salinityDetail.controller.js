@@ -134,18 +134,20 @@ const GetSalinityDetailList = async (req, reply) => {
 };
 
 // GET /api/salinity-detail/range/:kihieu - khoang ngay+gio hien co cua 1 tram, dung de khoa
-// date-time picker khi them/sua o trang quan tri (khong cho chon ngoai khoang nay).
+// date-time picker khi them/sua/loc o trang quan tri (khong cho chon ngoai khoang nay). Dung
+// ":kihieu" = "all" de lay khoang CHUNG cua TAT CA cac tram (khi bo loc dang la "Tat ca diem do").
 const GetSalinityDetailRange = async (req, reply) => {
   try {
     const {kihieu} = req.params;
-    if (!VALID_SALINITY_STATIONS.includes(kihieu)) {
+    const isAll = kihieu === "all";
+    if (!isAll && !VALID_SALINITY_STATIONS.includes(kihieu)) {
       return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
     }
 
     const result = await QueryDatabase(
       `SELECT MIN("ThoiDiem") AS min_time, MAX("ThoiDiem") AS max_time, COUNT(*) AS total
-       FROM hochiminh."DoManChiTiet" WHERE "KiHieu" = $1`,
-      [kihieu],
+       FROM hochiminh."DoManChiTiet" ${isAll ? "" : `WHERE "KiHieu" = $1`}`,
+      isAll ? [] : [kihieu],
     );
 
     return reply.code(200).send({
