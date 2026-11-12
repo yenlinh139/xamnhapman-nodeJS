@@ -59,22 +59,13 @@ const GetSalinityPoints = async (req, reply) => {
          ORDER BY "Ngày" DESC`,
       );
 
-      // Lấy khoảng ngày dữ liệu trong bảng
-      const rangeResult = await QueryDatabase(
-        `SELECT MIN("Ngày") AS start_date, MAX("Ngày") AS end_date
-         FROM hochiminh."DoMan"`,
-      );
-      const startDate = rangeResult.rows[0]?.start_date || null;
-      const endDate = rangeResult.rows[0]?.end_date || null;
-      const totalRecords = dataResult.rowCount || 0;
-
       // Xử lý dữ liệu
       result = pointsResult.rows.map((point) => {
         const pointData = {
           ...point,
-          start_date: startDate,
-          end_date: endDate,
-          total_records: totalRecords,
+          start_date: null,
+          end_date: null,
+          total_records: 0,
           latest_value: null,
           latest_date: null,
           previous_value: null,
@@ -85,11 +76,19 @@ const GetSalinityPoints = async (req, reply) => {
         let foundLatest = false;
         let foundPrevious = false;
 
-        // Lặp qua dữ liệu độ mặn để tìm latest và previous
+        // Lặp qua dữ liệu độ mặn để tìm latest/previous VÀ tự tính total_records/start_date/
+        // end_date THEO ĐÚNG TRẠM này (không lấy chung của cả bảng "DoMan"), vì mỗi trạm có 1
+        // cột riêng và có thể NULL ở những ngày khác nhau (vd KXD2 chỉ có dữ liệu từ 7/12/2024).
+        // dataResult.rows đã sắp "Ngày" DESC nên bản ghi non-null đầu tiên gặp là end_date (mới
+        // nhất), bản ghi non-null cuối cùng gặp là start_date (cũ nhất).
         for (const record of dataResult.rows) {
           const value = record[kihieu]; // Lấy giá trị cột tương ứng với KiHieu
 
           if (value !== null && value !== undefined) {
+            pointData.total_records += 1;
+            if (!pointData.end_date) pointData.end_date = record.Ngày;
+            pointData.start_date = record.Ngày;
+
             if (!foundLatest) {
               pointData.latest_value = value;
               pointData.latest_date = record.Ngày;
@@ -98,7 +97,6 @@ const GetSalinityPoints = async (req, reply) => {
               pointData.previous_value = value;
               pointData.previous_date = record.Ngày;
               foundPrevious = true;
-              break;
             }
           }
         }
