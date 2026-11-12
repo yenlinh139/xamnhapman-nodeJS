@@ -134,10 +134,15 @@ const GetHydrometeorologyData = async (req, reply) => {
       const columns = mapping.columns.map((col) => `"${col}"`).join(", ");
       const tableName = mapping.table;
 
+      // Bảng dùng chung cho nhiều trạm (mỗi trạm 1 cột) nên phải loại các dòng mà TẤT CẢ cột
+      // của trạm này đều NULL, nếu không total_records/dữ liệu trả về sẽ lẫn cả những ngày
+      // chỉ có trạm khác có số liệu (không phải của trạm đang truy vấn).
+      const hasDataCondition = mapping.columns.map((col) => `"${col}" IS NOT NULL`).join(" OR ");
+
       query = `
         SELECT "Ngày", ${columns}
         FROM hochiminh."${tableName}"
-        WHERE 1=1 ${timeCondition}
+        WHERE (${hasDataCondition}) ${timeCondition}
         ORDER BY TO_DATE("Ngày", 'MM/DD/YYYY') ${order}
         LIMIT ${limitParam} OFFSET ${offsetParam}
       `;
@@ -145,14 +150,13 @@ const GetHydrometeorologyData = async (req, reply) => {
       countQuery = `
         SELECT COUNT(*) as total
         FROM hochiminh."${tableName}"
-        WHERE 1=1 ${timeCondition}
+        WHERE (${hasDataCondition}) ${timeCondition}
       `;
 
       // Khoảng thời gian có số liệu của trạm (ngày cũ nhất - ngày mới nhất):
       // chỉ tính các dòng có ít nhất một cột của trạm khác NULL.
       // Cột "Ngày" là text dạng M/D/YYYY -> phải chuyển sang date trước khi MIN/MAX
       // (so sánh chuỗi sẽ sai: "10/10/1990" < "9/9/2022")
-      const hasDataCondition = mapping.columns.map((col) => `"${col}" IS NOT NULL`).join(" OR ");
       rangeQuery = `
         SELECT
           TO_CHAR(MIN(TO_DATE("Ngày", 'MM/DD/YYYY')), 'YYYY-MM-DD') AS start_date,

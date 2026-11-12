@@ -775,6 +775,7 @@ const getStations = async (request, reply) => {
           MAX(d_count.date_time) AS end_time
         FROM iot_system.iot_data d_count
         WHERE d_count.serial_number = s.serial_number
+          AND d_count.salt_value IS NOT NULL
       ) iot_counts ON TRUE
       LEFT JOIN LATERAL (
         SELECT
