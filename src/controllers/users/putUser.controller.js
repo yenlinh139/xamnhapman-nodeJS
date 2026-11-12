@@ -11,7 +11,9 @@ const PutUser = async (req, res, next) => {
 
     const name = escape(req.body.name);
     const email = escape(req.body.email);
-    const phone = escape(req.body.phone);
+    // Số điện thoại không bắt buộc (không có dấu * trong EditUserModal.jsx) - lưu NULL khi để
+    // trống thay vì chuỗi rỗng/"undefined", khớp với cách CreateUser xử lý.
+    const phone = req.body.phone ? escape(req.body.phone) : null;
     const password = escape(req.body.password);
 
     if (!name) {
@@ -26,20 +28,22 @@ const PutUser = async (req, res, next) => {
       return {code: 404, message: "Email không tồn tại"};
     }
 
+    const phoneSql = phone ? `'${phone}'` : "NULL";
+
     if (!password || req.body.password == undefined) {
       const sql = `
-        UPDATE users 
-        SET name = '${name}', phone = '${phone}'
-        WHERE email = '${email}' 
+        UPDATE users
+        SET name = '${name}', phone = ${phoneSql}
+        WHERE email = '${email}'
       `;
       await QueryDatabase(sql);
       return {code: 200, message: "Cập nhật người dùng thành công"};
     } else {
       const hashedPassword = await hashPassword(password);
       const sql = `
-        UPDATE users 
-        SET password = '${hashedPassword}', name = '${name}', phone = '${phone}'
-        WHERE email = '${email}' 
+        UPDATE users
+        SET password = '${hashedPassword}', name = '${name}', phone = ${phoneSql}
+        WHERE email = '${email}'
       `;
       await QueryDatabase(sql);
       return {code: 200, message: "Cập nhật người dùng thành công"};
