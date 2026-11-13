@@ -147,8 +147,7 @@ const loadReferenceWaterLevels = async () => {
   return byDay;
 };
 
-const windowDays = (endDay) =>
-  Array.from({length: HYDROLOGY_WINDOW_DAYS}, (_, index) => addDays(endDay, -index));
+const windowDays = (endDay) => Array.from({length: HYDROLOGY_WINDOW_DAYS}, (_, index) => addDays(endDay, -index));
 
 const summarizeWater = (name, unit, items) => {
   const means = items.map((item) => item.mean).filter((value) => value !== null);
@@ -303,10 +302,7 @@ const loadSubscriptions = async (email) => {
 
 const groupSubscriptions = (rows) =>
   Object.fromEntries(
-    TARGET_TYPES.map((type) => [
-      type,
-      rows.filter((row) => row.target_type === type).map((row) => row.target_code),
-    ]),
+    TARGET_TYPES.map((type) => [type, rows.filter((row) => row.target_type === type).map((row) => row.target_code)]),
   );
 
 const loadOptions = async () => {

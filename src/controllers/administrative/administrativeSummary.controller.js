@@ -29,10 +29,7 @@ const toDecimalDegrees = (raw) => {
   if (raw === null || raw === undefined || raw === "") return null;
   if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
 
-  const text = String(raw)
-    .trim()
-    .replace(/[’‘′]/g, "'")
-    .replace(/[”“″]/g, '"');
+  const text = String(raw).trim().replace(/[’‘′]/g, "'").replace(/[”“″]/g, '"');
   if (/^-?\d+([.,]\d+)?$/.test(text)) return parseFloat(text.replace(",", "."));
 
   const match = text.match(/(\d+)°\s*(\d+)'(?:\s*([\d.]+)")?\s*([NSEW])?/i);
@@ -94,12 +91,8 @@ const loadAllStations = async () => {
   const [salinityResult, kttvResult, iotResult, doManColumnsResult] = await Promise.all([
     QueryDatabase(`SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai" FROM hochiminh."DiemDoMan"`),
     QueryDatabase(`SELECT "KiHieu", "TenTram", "KinhDo", "ViDo", "PhanLoai", "YeuTo" FROM hochiminh."TramKTTV"`),
-    QueryDatabase(
-      `SELECT serial_number, station_name, station_code, latitude, longitude FROM iot_system.iot_stations`,
-    ),
-    QueryDatabase(
-      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'hochiminh' AND table_name = 'DoMan'`,
-    ),
+    QueryDatabase(`SELECT serial_number, station_name, station_code, latitude, longitude FROM iot_system.iot_stations`),
+    QueryDatabase(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'hochiminh' AND table_name = 'DoMan'`),
   ]);
 
   const doManColumns = new Set(doManColumnsResult.rows.map((row) => row.column_name));
@@ -187,9 +180,7 @@ const fetchLatestWideDays = async (tableName, columns) => {
      LIMIT 10`,
   );
 
-  return result.rows
-    .filter((row) => columns.some((column) => toNumber(row[column]) !== null))
-    .slice(0, 2);
+  return result.rows.filter((row) => columns.some((column) => toNumber(row[column]) !== null)).slice(0, 2);
 };
 
 // IoT: trung bình theo từng trạm ở mốc giờ gần nhất (quy về cuối giờ, như các popup IoT hiện có) và giờ liền trước
@@ -339,12 +330,10 @@ const buildForecastSalinity = async (salinityStations, iotStations) => {
       iotStations.map((station) => station.stationCode).filter((code) => FORECAST_IOT_COLUMNS.includes(code)),
     ),
   ]);
-  return candidates
-    .filter(Boolean)
-    .reduce((best, item) => {
-      const gap = (candidate) => Math.abs(new Date(candidate.time).getTime() - referenceNow);
-      return !best || gap(item) < gap(best) ? item : best;
-    }, null);
+  return candidates.filter(Boolean).reduce((best, item) => {
+    const gap = (candidate) => Math.abs(new Date(candidate.time).getTime() - referenceNow);
+    return !best || gap(item) < gap(best) ? item : best;
+  }, null);
 };
 
 const buildForecastForColumns = async (columns) => {

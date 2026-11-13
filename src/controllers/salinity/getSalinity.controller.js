@@ -616,8 +616,7 @@ const ExportSalinityObservationsForAI = async (req, reply) => {
       stationMeta[s.KiHieu] = s;
     }
 
-    const toDateStr = (rawDate) =>
-      rawDate instanceof Date ? rawDate.toISOString().slice(0, 10) : String(rawDate).slice(0, 10);
+    const toDateStr = (rawDate) => (rawDate instanceof Date ? rawDate.toISOString().slice(0, 10) : String(rawDate).slice(0, 10));
 
     const waterQualityByDateStation = {};
     for (const record of waterQualityResult.rows) {

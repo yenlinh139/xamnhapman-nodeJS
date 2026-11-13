@@ -22,26 +22,37 @@ const recomputeDailyAggregate = async (kiHieu, isoDate) => {
   );
 
   const rows = detailResult.rows;
-  const doManAvg = avg(rows.map((r) => r.DoMan).filter((v) => v !== null).map(Number));
-  const phAvg = avg(rows.map((r) => r.pH).filter((v) => v !== null).map(Number));
-  const ecAvg = avg(rows.map((r) => r.DoDanDien).filter((v) => v !== null).map(Number));
-  const turbidityAvg = avg(rows.map((r) => r.DoDuc).filter((v) => v !== null).map(Number));
+  const doManAvg = avg(
+    rows
+      .map((r) => r.DoMan)
+      .filter((v) => v !== null)
+      .map(Number),
+  );
+  const phAvg = avg(
+    rows
+      .map((r) => r.pH)
+      .filter((v) => v !== null)
+      .map(Number),
+  );
+  const ecAvg = avg(
+    rows
+      .map((r) => r.DoDanDien)
+      .filter((v) => v !== null)
+      .map(Number),
+  );
+  const turbidityAvg = avg(
+    rows
+      .map((r) => r.DoDuc)
+      .filter((v) => v !== null)
+      .map(Number),
+  );
 
   // hochiminh."DoMan": UPSERT 1 cot (theo dung ten tram) cho dong ung voi "Ngày" nay.
-  const existingDoManRow = await QueryDatabase(
-    `SELECT 1 FROM hochiminh."DoMan" WHERE "Ngày" = $1::date`,
-    [isoDate],
-  );
+  const existingDoManRow = await QueryDatabase(`SELECT 1 FROM hochiminh."DoMan" WHERE "Ngày" = $1::date`, [isoDate]);
   if (existingDoManRow.rowCount > 0) {
-    await QueryDatabase(
-      `UPDATE hochiminh."DoMan" SET "${kiHieu}" = $1 WHERE "Ngày" = $2::date`,
-      [doManAvg, isoDate],
-    );
+    await QueryDatabase(`UPDATE hochiminh."DoMan" SET "${kiHieu}" = $1 WHERE "Ngày" = $2::date`, [doManAvg, isoDate]);
   } else if (doManAvg !== null) {
-    await QueryDatabase(
-      `INSERT INTO hochiminh."DoMan" ("Ngày", "${kiHieu}") VALUES ($1::date, $2)`,
-      [isoDate, doManAvg],
-    );
+    await QueryDatabase(`INSERT INTO hochiminh."DoMan" ("Ngày", "${kiHieu}") VALUES ($1::date, $2)`, [isoDate, doManAvg]);
   }
 
   // hochiminh."ChiSoNuoc": UPSERT theo PK (Ngay, KiHieu), hoac xoa neu ca 3 chi so deu khong con.
@@ -56,19 +67,13 @@ const recomputeDailyAggregate = async (kiHieu, isoDate) => {
       [isoDate, kiHieu, phAvg, ecAvg, turbidityAvg],
     );
   } else {
-    await QueryDatabase(`DELETE FROM hochiminh."ChiSoNuoc" WHERE "Ngày" = $1::date AND "KiHieu" = $2`, [
-      isoDate,
-      kiHieu,
-    ]);
+    await QueryDatabase(`DELETE FROM hochiminh."ChiSoNuoc" WHERE "Ngày" = $1::date AND "KiHieu" = $2`, [isoDate, kiHieu]);
   }
 };
 
 // Ngay VN (YYYY-MM-DD) cua 1 moc ThoiDiem - dung de biet ngay nao can tinh lai sau khi sua/xoa.
 const toVNIsoDate = async (thoiDiem) => {
-  const result = await QueryDatabase(
-    `SELECT ($1::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS d`,
-    [thoiDiem],
-  );
+  const result = await QueryDatabase(`SELECT ($1::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS d`, [thoiDiem]);
   return result.rows[0]?.d;
 };
 
@@ -230,15 +235,7 @@ const UpdateSalinityDetail = async (req, reply) => {
         WHERE id = $7
         RETURNING id, "ThoiDiem", "KiHieu", "DoMan", "pH", "DoDanDien", "DoDuc"
       `,
-      [
-        nextThoiDiem,
-        nextKiHieu,
-        nextDoMan,
-        nextPH,
-        nextDoDanDien,
-        nextDoDuc,
-        id,
-      ],
+      [nextThoiDiem, nextKiHieu, nextDoMan, nextPH, nextDoDanDien, nextDoDuc, id],
     );
     const updated = result.rows[0];
 
@@ -262,10 +259,7 @@ const DeleteSalinityDetail = async (req, reply) => {
   try {
     const {id} = req.params;
 
-    const result = await QueryDatabase(
-      `DELETE FROM hochiminh."DoManChiTiet" WHERE id = $1 RETURNING "ThoiDiem", "KiHieu"`,
-      [id],
-    );
+    const result = await QueryDatabase(`DELETE FROM hochiminh."DoManChiTiet" WHERE id = $1 RETURNING "ThoiDiem", "KiHieu"`, [id]);
     if (result.rowCount === 0) {
       return reply.code(404).send({code: 404, message: "Không tìm thấy bản ghi"});
     }

@@ -9,8 +9,23 @@
 // MM/DD/YYYY, ung dung dang parse cac cot so qua TO_DATE/parseFloat o tang code, khong can doi
 // schema) - chi chuan hoa lai dung gia tri NULL.
 const KHITUONG_COLUMNS = [
-  "R_AP", "R_BC", "R_CG", "R_CL", "R_CC", "R_HM", "R_LMX", "R_LS", "R_MDC",
-  "R_NB", "R_PVC", "R_TTH", "R_TSH", "R_TD", "Ttb_TSH", "Tx_TSH", "Tm_TSH",
+  "R_AP",
+  "R_BC",
+  "R_CG",
+  "R_CL",
+  "R_CC",
+  "R_HM",
+  "R_LMX",
+  "R_LS",
+  "R_MDC",
+  "R_NB",
+  "R_PVC",
+  "R_TTH",
+  "R_TSH",
+  "R_TD",
+  "Ttb_TSH",
+  "Tx_TSH",
+  "Tm_TSH",
 ];
 const THUYVAN_COLUMNS = ["Htb_NB", "Hx_NB", "Hm_NB", "Htb_PA", "Hx_PA", "Hm_PA"];
 

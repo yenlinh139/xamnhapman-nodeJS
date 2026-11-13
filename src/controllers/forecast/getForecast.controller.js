@@ -12,9 +12,7 @@ const {toIsoWithOffset, resolveReferenceNow} = require("../../utils/forecastTime
 // Danh sách trạm + cờ hasForecast, để FE tự biết trạm nào chưa có dữ liệu dự báo
 const GetForecastStations = async (req, reply) => {
   // ?group=iot -> các trạm IoT có dự báo; mặc định là điểm đo mặn
-  return reply
-    .code(200)
-    .send(req.query?.group === "iot" ? IOT_STATIONS_FORECAST_STATUS : ALL_SALINITY_STATIONS_FORECAST_STATUS);
+  return reply.code(200).send(req.query?.group === "iot" ? IOT_STATIONS_FORECAST_STATUS : ALL_SALINITY_STATIONS_FORECAST_STATUS);
 };
 
 /**
