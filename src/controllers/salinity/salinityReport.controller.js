@@ -337,6 +337,23 @@ const GetDailySalinityReportData = async (req, reply) => {
   }
 };
 
+// Danh sách ngày có số liệu quan trắc độ mặn (mới -> cũ) cho dropdown chọn ngày báo cáo
+const GetSalinityReportDates = async (req, reply) => {
+  try {
+    const result = await QueryDatabase(`
+      SELECT DISTINCT TO_CHAR("Ngày", 'YYYY-MM-DD') AS day
+      FROM hochiminh."DoMan"
+      WHERE "Ngày" IS NOT NULL
+      ORDER BY day DESC
+    `);
+    return reply.code(200).send(result.rows.map((row) => row.day));
+  } catch (error) {
+    logger.error("GetSalinityReportDates error:", error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
 module.exports = {
   GetDailySalinityReportData,
+  GetSalinityReportDates,
 };

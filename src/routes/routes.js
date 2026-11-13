@@ -78,7 +78,7 @@ const {
 
 // IoT Routes
 const iotRoutes = require("./iotRoutes");
-const {GetDailySalinityReportData} = require("../controllers/salinity/salinityReport.controller");
+const {GetDailySalinityReportData, GetSalinityReportDates} = require("../controllers/salinity/salinityReport.controller");
 const {GetForecastStations, GetLatestForecast} = require("../controllers/forecast/getForecast.controller");
 const {
   GetForecastRuns,
@@ -138,6 +138,7 @@ const router = (router, opts, next) => {
   router.put("/salinity-data/:date", {onRequest: [VerifyToken]}, UpdateSalinityData);
   router.delete("/salinity-data/:date", {onRequest: [VerifyToken]}, DeleteSalinityData);
   router.delete("/salinity-data-range", {onRequest: [VerifyToken]}, DeleteSalinityDataRange);
+  router.get("/salinity-report-dates", GetSalinityReportDates);
   router.get("/salinity-report/:date", GetDailySalinityReportData);
 
   // SalinityDetail (hochiminh."DoManChiTiet") - CRUD cho trang quan tri, tung lan do that (co gio)
