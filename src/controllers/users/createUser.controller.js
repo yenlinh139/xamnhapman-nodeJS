@@ -24,16 +24,11 @@ const CreateUser = async (req, res, next) => {
       return {code: 400, message: "Vui lòng điền đầy đủ các trường bắt buộc"};
     }
 
-    // Check user+email ko được trùng với cái đã có trong hệ thống
+    // Check email ko được trùng với cái đã có trong hệ thống (name chỉ là tên hiển thị, được phép trùng)
     const checkEmail = await QueryDatabase(`SELECT * FROM "users" WHERE email='${email}'`);
-    const checkName = await QueryDatabase(`SELECT * FROM "users" WHERE name='${name}'`);
     if (checkEmail.rowCount > 0) {
       res.status(409);
       return {code: 409, message: "Email đã được sử dụng"};
-    }
-    if (checkName.rowCount > 0) {
-      res.status(409);
-      return {code: 409, message: "Tên người dùng đã tồn tại"};
     }
     // Hash password
     const hashedPassword = await hashPassword(password);
