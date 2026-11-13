@@ -14,6 +14,10 @@ const {FORECAST_STATION_MAP, FORECAST_VALUE_COLUMNS, FORECAST_DAILY_COLUMNS} = r
  * forecast_system.forecast_runs / forecast_system.forecast_values (dang rong,
  * giong hochiminh."DoMan": 1 dong / moc thoi gian, 1 cot / tram) - gia tri se lap
  * lai suot cac moc trong cung 1 ngay vi DailyForecast la gia tri cap ngay.
+ *
+ * CHI GIU 1 LUOT DUY NHAT: moi khi phat hien lot du bao MOI (run_id khac), xoa toan bo
+ * lot cu truoc khi luu lot moi (xem clearOldRuns) - khong tich luy nhieu lot nhu truoc,
+ * vi lot cu da het han su dung ngay khi co lot moi thay the.
  */
 class ForecastSyncService {
   constructor() {
@@ -94,6 +98,16 @@ class ForecastSyncService {
     return {forecastStartAt, intervalHours, horizonDays, issuedAt};
   }
 
+  /**
+   * He thong chi giu DUY NHAT 1 lot du bao tai moi thoi diem: moi khi co lot moi, xoa toan bo
+   * lot cu truoc khi luu lot moi (khong tich luy nhieu lot nhu truoc). forecast_values co
+   * "ON DELETE CASCADE" theo run_id nen chi can xoa forecast_runs la du; forecast_sync_logs
+   * KHONG bi xoa (giu lai lich su dong bo de doi chieu/debug).
+   */
+  async clearOldRuns() {
+    await QueryDatabase(`DELETE FROM forecast_system.forecast_runs`);
+  }
+
   async saveRun(payload, meta) {
     await QueryDatabase(
       `INSERT INTO forecast_system.forecast_runs
@@ -157,8 +171,9 @@ class ForecastSyncService {
   }
 
   /**
-   * Đồng bộ 1 lượt: bỏ qua nếu run_id đã có (idempotent), không fail cả run
-   * nếu gặp station lạ chưa map (chỉ log lại).
+   * Đồng bộ 1 lượt: bỏ qua nếu run_id đã có (idempotent); nếu là lượt MỚI thì xóa hết lượt cũ
+   * trước khi lưu (chỉ giữ 1 lượt duy nhất tại mọi thời điểm - xem clearOldRuns). Không fail cả
+   * run nếu gặp station lạ chưa map (chỉ log lại).
    */
   async syncLatest() {
     const startTime = Date.now();
@@ -179,6 +194,7 @@ class ForecastSyncService {
     const {rows, unmappedStations} = this.pivotToWideRows(payload);
     const meta = this.buildRunMeta(payload, rows);
 
+    await this.clearOldRuns();
     await this.saveRun(payload, meta);
     await this.saveWideRows(payload.run_id, rows);
 

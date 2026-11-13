@@ -3,8 +3,10 @@ const forecastSyncService = require("../services/forecastSyncService");
 
 /**
  * Forecast Sync Cron Job
- * API dự báo phát hành lượt chạy mới mỗi 6 giờ -> poll cùng nhịp.
- * syncLatest() tự bỏ qua nếu run_id đã tồn tại nên poll trùng không sao.
+ * Poll mỗi 30 phút để sớm phát hiện lượt dự báo mới (API phát hành theo lịch riêng, không
+ * đồng bộ với chu kỳ poll). syncLatest() tự bỏ qua nếu run_id đã tồn tại nên poll trùng không
+ * sao; khi phát hiện lượt mới, nó tự xóa lượt cũ trước khi lưu lượt mới (chỉ giữ 1 lượt duy
+ * nhất tại mọi thời điểm - xem forecastSyncService.clearOldRuns).
  */
 class ForecastSyncCron {
   constructor() {
@@ -16,7 +18,7 @@ class ForecastSyncCron {
   start() {
     try {
       this.cronTask = cron.schedule(
-        "0 */6 * * *",
+        "*/30 * * * *",
         async () => {
           await this.executeSyncJob();
         },
@@ -27,7 +29,7 @@ class ForecastSyncCron {
       );
 
       this.logger.info("Forecast sync cron job started successfully", {
-        schedule: "Every 6 hours",
+        schedule: "Every 30 minutes",
         timezone: "Asia/Ho_Chi_Minh",
       });
 
@@ -70,7 +72,7 @@ class ForecastSyncCron {
     return {
       isRunning: this.isRunning,
       isScheduled: Boolean(this.cronTask),
-      schedule: "Every 6 hours",
+      schedule: "Every 30 minutes",
       timezone: "Asia/Ho_Chi_Minh",
     };
   }

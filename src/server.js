@@ -110,11 +110,11 @@ app.ready(async () => {
     console.log("ℹ IoT sync cron job is disabled (ENABLE_IOT_SYNC_CRON=false)");
   }
 
-  // Start Forecast Sync Cron Job (every 6 hours) - can be disabled when using dedicated worker
+  // Start Forecast Sync Cron Job (every 30 minutes) - can be disabled when using dedicated worker
   const enableForecastSyncCron = String(process.env.ENABLE_FORECAST_SYNC_CRON || "true").toLowerCase() === "true";
   if (enableForecastSyncCron) {
     forecastSyncCron.start();
-    console.log("✓ Forecast sync cron job started (every 6 hours)");
+    console.log("✓ Forecast sync cron job started (every 30 minutes)");
   } else {
     console.log("ℹ Forecast sync cron job is disabled (ENABLE_FORECAST_SYNC_CRON=false)");
   }
