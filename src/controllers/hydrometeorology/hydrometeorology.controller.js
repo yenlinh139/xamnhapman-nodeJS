@@ -287,4 +287,6 @@ module.exports = {
   GetHydrometeorology,
   GetHydrometeorologyData,
   GetLatestHydrometeorologyData,
+  idMapping,
+  normalizeDateExpr,
 };

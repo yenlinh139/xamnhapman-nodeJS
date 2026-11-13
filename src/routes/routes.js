@@ -57,6 +57,7 @@ const {
   GetStationPositionSalinity,
   GetStationPositionHydrometeorology,
 } = require("../controllers/search/getSearch.controller");
+const {GetAdministrativeSummary} = require("../controllers/administrative/administrativeSummary.controller");
 const {
   GetHydrometeorology,
   GetHydrometeorologyData,
@@ -153,6 +154,7 @@ const router = (router, opts, next) => {
   router.get("/administrative/districts", GetAdministrativeDistricts);
   router.get("/administrative/communes/:maHuyen", GetAdministrativeCommunesByDistrict);
   router.get("/administrative/commune/:maXa", GetAdministrativeCommuneByCode);
+  router.get("/administrative/summary", GetAdministrativeSummary);
 
   //hydrometeorology
   router.get("/hydrometeorology-stations", GetHydrometeorology);

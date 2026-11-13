@@ -174,8 +174,10 @@ const getDataByStation = async (request, reply) => {
     const params = [serialNumber];
     let paramCount = 2;
 
+    // Bản ghi đúng 00:00 thuộc về ngày hôm trước (ngày = 00:01-24:00, cùng quy ước "cuối giờ"),
+    // nên mốc đầu giai đoạn là "sau 00:00" để mỗi ngày trong giai đoạn luôn trọn vẹn.
     if (startDate) {
-      conditions.push(`date_time >= $${paramCount++}::date`);
+      conditions.push(`date_time > $${paramCount++}::date`);
       params.push(startDate);
     }
 
@@ -189,102 +191,86 @@ const getDataByStation = async (request, reply) => {
     let dataQuery;
     const normalizedGroupBy = groupBy === "date" ? "day" : groupBy;
 
+    // daily_rainfall_value là lượng mưa LUỸ KẾ, mỗi trạm tự reset về 0 vào một giờ riêng (có trạm sau
+    // 00:00, có trạm lúc 13:21) nên không được cộng dồn hay lấy MAX theo ngày. Lượng mưa của 1 mốc
+    // (5 phút/giờ/ngày) = tổng các mức tăng giữa 2 bản ghi liên tiếp; giá trị tụt xuống nghĩa là vừa reset.
+    const buildBucketQuery = (bucketColumn, bucketExpr) => `
+        WITH seed AS (
+          SELECT daily_rainfall_value AS value
+          FROM iot_system.iot_data
+          WHERE serial_number = $1
+            AND daily_rainfall_value IS NOT NULL
+            AND ${startDate ? "date_time <= $2::date" : "FALSE"}
+          ORDER BY date_time DESC
+          LIMIT 1
+        ),
+        rain AS (
+          SELECT
+            date_time AS rain_time,
+            daily_rainfall_value AS value,
+            COALESCE(LAG(daily_rainfall_value) OVER (ORDER BY date_time), (SELECT value FROM seed)) AS previous_value
+          FROM iot_system.iot_data
+          ${whereClause} AND daily_rainfall_value IS NOT NULL
+        ),
+        base AS (
+          SELECT
+            d.*,
+            CASE
+              WHEN r.previous_value IS NULL OR r.value < r.previous_value THEN r.value
+              ELSE r.value - r.previous_value
+            END AS rain_increment
+          FROM (
+            SELECT
+              date_time,
+              distance_value, distance_unit,
+              daily_rainfall_unit,
+              salt_value, temp_value, temp_unit,
+              ${bucketExpr} AS bucket_time
+            FROM iot_system.iot_data
+            ${whereClause}
+          ) d
+          LEFT JOIN rain r ON r.rain_time = d.date_time
+        )
+        SELECT
+          bucket_time AS ${bucketColumn},
+          ROUND(AVG(distance_value)::numeric, 3) AS distance_value_avg,
+          MAX(distance_unit) FILTER (WHERE distance_unit IS NOT NULL) AS distance_unit,
+          ROUND(SUM(rain_increment)::numeric, 3) AS daily_rainfall_value_sum,
+          MAX(daily_rainfall_unit) FILTER (WHERE daily_rainfall_unit IS NOT NULL) AS daily_rainfall_unit,
+          ROUND(AVG(salt_value)::numeric, 3) AS salt_value_avg,
+          '‰' AS salt_unit,
+          ROUND(AVG(temp_value)::numeric, 3) AS temp_value_avg,
+          MAX(temp_unit) FILTER (WHERE temp_unit IS NOT NULL) AS temp_unit,
+          COUNT(*) AS records_in_bucket
+        FROM base
+        WHERE bucket_time <= ${VIETNAM_NOW_SQL}
+        GROUP BY bucket_time
+        ORDER BY bucket_time DESC
+      `;
+
     if (normalizedGroupBy === "none") {
       // none = gom theo cửa sổ đồng bộ 5 phút (00:01-00:05, 00:06-00:10, ...)
-      dataQuery = `
-        WITH base AS (
-          SELECT
-            date_time,
-            distance_value, distance_unit,
-            daily_rainfall_value, daily_rainfall_unit,
-            salt_value, salt_unit,
-            temp_value, temp_unit,
-            CASE
+      dataQuery = buildBucketQuery(
+        "sync_5m_end_time",
+        `CASE
               WHEN EXTRACT(EPOCH FROM (date_time - date_trunc('hour', date_time))) = 0
                 THEN date_trunc('hour', date_time)
               ELSE date_trunc('hour', date_time)
                    + (CEIL(EXTRACT(EPOCH FROM (date_time - date_trunc('hour', date_time))) / 300.0) * interval '5 minute')
-            END AS sync_5m_end_time
-          FROM iot_system.iot_data
-          ${whereClause}
-        )
-        SELECT
-          sync_5m_end_time,
-          ROUND(AVG(distance_value)::numeric, 3) AS distance_value_avg,
-          MAX(distance_unit) FILTER (WHERE distance_unit IS NOT NULL) AS distance_unit,
-          CASE
-            WHEN COUNT(daily_rainfall_value) > 0 THEN ROUND(SUM(daily_rainfall_value)::numeric, 3)
-            ELSE NULL
-          END AS daily_rainfall_value_sum,
-          MAX(daily_rainfall_unit) FILTER (WHERE daily_rainfall_unit IS NOT NULL) AS daily_rainfall_unit,
-          ROUND(AVG(salt_value)::numeric, 3) AS salt_value_avg,
-          '‰' AS salt_unit,
-          ROUND(AVG(temp_value)::numeric, 3) AS temp_value_avg,
-          MAX(temp_unit) FILTER (WHERE temp_unit IS NOT NULL) AS temp_unit,
-          COUNT(*) AS records_in_bucket
-        FROM base
-        WHERE sync_5m_end_time <= ${VIETNAM_NOW_SQL}
-        GROUP BY sync_5m_end_time
-        ORDER BY sync_5m_end_time DESC
-      `;
+            END`,
+      );
     } else if (normalizedGroupBy === "hour") {
       // Giờ theo quy ước: 00:01-01:00 là giờ 1; 01:01-02:00 là giờ 2
-      dataQuery = `
-        WITH base AS (
-          SELECT
-            date_time,
-            distance_value, distance_unit,
-            daily_rainfall_value, daily_rainfall_unit,
-            salt_value, salt_unit,
-            temp_value, temp_unit,
-            CASE
+      dataQuery = buildBucketQuery(
+        "hour_end_time",
+        `CASE
               WHEN date_time = date_trunc('hour', date_time)
                 THEN date_trunc('hour', date_time)
               ELSE date_trunc('hour', date_time) + interval '1 hour'
-            END AS hour_end_time
-          FROM iot_system.iot_data
-          ${whereClause}
-        )
-        SELECT
-          hour_end_time,
-          ROUND(AVG(distance_value)::numeric, 3) AS distance_value_avg,
-          MAX(distance_unit) FILTER (WHERE distance_unit IS NOT NULL) AS distance_unit,
-          CASE
-            WHEN COUNT(daily_rainfall_value) > 0 THEN ROUND(SUM(daily_rainfall_value)::numeric, 3)
-            ELSE NULL
-          END AS daily_rainfall_value_sum,
-          MAX(daily_rainfall_unit) FILTER (WHERE daily_rainfall_unit IS NOT NULL) AS daily_rainfall_unit,
-          ROUND(AVG(salt_value)::numeric, 3) AS salt_value_avg,
-          '‰' AS salt_unit,
-          ROUND(AVG(temp_value)::numeric, 3) AS temp_value_avg,
-          MAX(temp_unit) FILTER (WHERE temp_unit IS NOT NULL) AS temp_unit,
-          COUNT(*) AS records_in_bucket
-        FROM base
-        WHERE hour_end_time <= ${VIETNAM_NOW_SQL}
-        GROUP BY hour_end_time
-        ORDER BY hour_end_time DESC
-      `;
+            END`,
+      );
     } else if (normalizedGroupBy === "day") {
-      dataQuery = `
-        SELECT
-          DATE(date_time) AS day,
-          ROUND(AVG(distance_value)::numeric, 3) AS distance_value_avg,
-          MAX(distance_unit) FILTER (WHERE distance_unit IS NOT NULL) AS distance_unit,
-          CASE
-            WHEN COUNT(daily_rainfall_value) > 0 THEN ROUND(SUM(daily_rainfall_value)::numeric, 3)
-            ELSE NULL
-          END AS daily_rainfall_value_sum,
-          MAX(daily_rainfall_unit) FILTER (WHERE daily_rainfall_unit IS NOT NULL) AS daily_rainfall_unit,
-          ROUND(AVG(salt_value)::numeric, 3) AS salt_value_avg,
-          '‰' AS salt_unit,
-          ROUND(AVG(temp_value)::numeric, 3) AS temp_value_avg,
-          MAX(temp_unit) FILTER (WHERE temp_unit IS NOT NULL) AS temp_unit,
-          COUNT(*) AS records_in_bucket
-        FROM iot_system.iot_data
-        ${whereClause}
-        GROUP BY DATE(date_time)
-        ORDER BY DATE(date_time) DESC
-      `;
+      dataQuery = buildBucketQuery("day", `(date_time - interval '1 second')::date`);
     } else {
       return reply.code(400).send({
         success: false,

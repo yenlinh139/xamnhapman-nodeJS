@@ -916,7 +916,7 @@ const GetSearchDate = async (req, reply) => {
         label: "iotData",
         query: `
           SELECT
-            d.date_time::date AS date,
+            (d.date_time - interval '1 second')::date AS date,
             d.serial_number,
             s.station_name,
             s.station_code,
@@ -926,20 +926,30 @@ const GetSearchDate = async (req, reply) => {
             s.longitude AS kinhdo_decimal,
             ROUND(AVG(d.distance_value)::numeric, 3) AS distance_value_avg,
             MAX(d.distance_unit) FILTER (WHERE d.distance_unit IS NOT NULL) AS distance_unit,
-            CASE
-              WHEN COUNT(d.daily_rainfall_value) > 0 THEN ROUND(SUM(d.daily_rainfall_value)::numeric, 3)
-              ELSE NULL
-            END AS daily_rainfall_value_sum,
+            -- daily_rainfall_value là luỹ kế, mỗi trạm reset vào giờ riêng -> lượng mưa ngày = tổng các mức
+            -- tăng giữa 2 bản ghi liên tiếp (giá trị tụt xuống nghĩa là vừa reset)
+            ROUND(SUM(
+              CASE
+                WHEN d.previous_rain IS NULL OR d.daily_rainfall_value < d.previous_rain THEN d.daily_rainfall_value
+                ELSE d.daily_rainfall_value - d.previous_rain
+              END
+            )::numeric, 3) AS daily_rainfall_value_sum,
             MAX(d.daily_rainfall_unit) FILTER (WHERE d.daily_rainfall_unit IS NOT NULL) AS daily_rainfall_unit,
             ROUND(AVG(d.salt_value)::numeric, 3) AS salt_value_avg,
             '‰' AS salt_unit,
             ROUND(AVG(d.temp_value)::numeric, 3) AS temp_value_avg,
             MAX(d.temp_unit) FILTER (WHERE d.temp_unit IS NOT NULL) AS temp_unit,
             COUNT(*) AS total_records
-          FROM iot_system.iot_data d
+          FROM (
+            SELECT
+              i.*,
+              LAG(i.daily_rainfall_value) OVER (PARTITION BY i.serial_number ORDER BY i.date_time) AS previous_rain
+            FROM iot_system.iot_data i
+            WHERE i.date_time > $1::date - interval '1 day' AND i.date_time <= $1::date + interval '1 day'
+          ) d
           LEFT JOIN iot_system.iot_stations s ON s.serial_number = d.serial_number
-          WHERE d.date_time::date = $1::date
-          GROUP BY d.date_time::date, d.serial_number, s.station_name, s.station_code, s.latitude, s.longitude
+          WHERE d.date_time > $1::date AND d.date_time <= $1::date + interval '1 day'
+          GROUP BY 1, d.serial_number, s.station_name, s.station_code, s.latitude, s.longitude
           ORDER BY s.station_name ASC, d.serial_number ASC
           LIMIT $2
         `,
