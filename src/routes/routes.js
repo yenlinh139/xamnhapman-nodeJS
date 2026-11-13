@@ -59,6 +59,12 @@ const {
 } = require("../controllers/search/getSearch.controller");
 const {GetAdministrativeSummary} = require("../controllers/administrative/administrativeSummary.controller");
 const {
+  GetBulletinOptions,
+  GetBulletinSubscriptions,
+  SaveBulletinSubscriptions,
+  GetBulletins,
+} = require("../controllers/bulletin/bulletin.controller");
+const {
   GetHydrometeorology,
   GetHydrometeorologyData,
   GetLatestHydrometeorologyData,
@@ -155,6 +161,12 @@ const router = (router, opts, next) => {
   router.get("/administrative/communes/:maHuyen", GetAdministrativeCommunesByDistrict);
   router.get("/administrative/commune/:maXa", GetAdministrativeCommuneByCode);
   router.get("/administrative/summary", GetAdministrativeSummary);
+
+  // Bản tin dự báo, cảnh báo xâm nhập mặn
+  router.get("/bulletin/options", GetBulletinOptions);
+  router.get("/bulletin/subscriptions", {onRequest: [VerifyToken]}, GetBulletinSubscriptions);
+  router.put("/bulletin/subscriptions", {onRequest: [VerifyToken]}, SaveBulletinSubscriptions);
+  router.get("/bulletins", {onRequest: [VerifyToken]}, GetBulletins);
 
   //hydrometeorology
   router.get("/hydrometeorology-stations", GetHydrometeorology);

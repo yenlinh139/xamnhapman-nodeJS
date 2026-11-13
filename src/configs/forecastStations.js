@@ -29,7 +29,15 @@ const FORECAST_VALUE_COLUMNS = Object.values(FORECAST_STATION_MAP).map((s) => s.
 // Cot luu gia tri DailyForecast (du bao theo ngay) ben canh cot do_man (theo moc 2h)
 const FORECAST_DAILY_COLUMNS = FORECAST_VALUE_COLUMNS.map((c) => `${c}_Daily`);
 
+// Trạm IoT (station_code) dùng tạm dự báo của điểm đo mặn tương ứng - phải khớp với
+// IOT_STATION_FORECAST_MAP ở frontend (components/map/IoTMarkers.jsx).
+const IOT_STATION_FORECAST_MAP = {
+  CAH_IoT: "KXAH",
+  CKC_IoT: "CKC",
+};
+
 module.exports = {
+  IOT_STATION_FORECAST_MAP,
   FORECAST_STATION_MAP,
   ALL_SALINITY_STATIONS_FORECAST_STATUS,
   FORECAST_VALUE_COLUMNS,

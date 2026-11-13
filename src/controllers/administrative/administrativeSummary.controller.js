@@ -518,4 +518,4 @@ const GetAdministrativeSummary = async (req, reply) => {
   }
 };
 
-module.exports = {GetAdministrativeSummary};
+module.exports = {GetAdministrativeSummary, loadAllStations};
