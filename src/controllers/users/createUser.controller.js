@@ -33,9 +33,10 @@ const CreateUser = async (req, res, next) => {
     // Hash password
     const hashedPassword = await hashPassword(password);
 
+    // Admin tạo tài khoản qua endpoint này (yêu cầu VerifyToken) nên kích hoạt sẵn, không cần xác thực email
     const sql = `
-      INSERT INTO "users" (name, email, password , role, phone)
-      VALUES ('${name}', '${email}', '${hashedPassword}', '${role}', ${phone ? `'${phone}'` : "NULL"});
+      INSERT INTO "users" (name, email, password , role, phone, email_verified)
+      VALUES ('${name}', '${email}', '${hashedPassword}', '${role}', ${phone ? `'${phone}'` : "NULL"}, TRUE);
     `;
 
     await QueryDatabase(sql);
