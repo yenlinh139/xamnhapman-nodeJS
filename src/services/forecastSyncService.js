@@ -1,7 +1,11 @@
 const axios = require("axios");
 const QueryDatabase = require("../utils/queryDatabase");
 const logger = require("../loggers/loggers.config");
-const {FORECAST_STATION_MAP, FORECAST_VALUE_COLUMNS, FORECAST_DAILY_COLUMNS} = require("../configs/forecastStations");
+const {
+  FORECAST_ALL_VALUE_COLUMNS: FORECAST_VALUE_COLUMNS,
+  FORECAST_ALL_DAILY_COLUMNS: FORECAST_DAILY_COLUMNS,
+  resolveForecastColumn,
+} = require("../configs/forecastStations");
 
 /**
  * Forecast Sync Service
@@ -55,8 +59,9 @@ class ForecastSyncService {
     const byTime = new Map();
 
     for (const sourceRow of sourceRows) {
-      const mapping = FORECAST_STATION_MAP[sourceRow.Station];
-      if (!mapping) {
+      // Cột lưu: mã điểm đo mặn (MNB, CKC...) hoặc station_code trạm IoT (CKC_IoT...)
+      const column = resolveForecastColumn(sourceRow.Station);
+      if (!column) {
         unmappedStations.add(sourceRow.Station);
         continue;
       }
@@ -69,8 +74,8 @@ class ForecastSyncService {
       }
       // do_man: gia tri theo moc 2h | DailyForecast: gia tri theo ngay (lap lai trong ngay)
       const row = byTime.get(sourceRow.Datetime);
-      row[mapping.manualCode] = sourceRow.do_man;
-      row[`${mapping.manualCode}_Daily`] = sourceRow.DailyForecast;
+      row[column] = sourceRow.do_man;
+      row[`${column}_Daily`] = sourceRow.DailyForecast;
     }
 
     const rows = Array.from(byTime.values()).sort((a, b) => new Date(a.ThoiDiem).getTime() - new Date(b.ThoiDiem).getTime());
@@ -90,10 +95,14 @@ class ForecastSyncService {
       rows.length >= 2
         ? Math.round((new Date(rows[1].ThoiDiem).getTime() - new Date(rows[0].ThoiDiem).getTime()) / 3600000)
         : null;
-    const horizonDays = intervalHours ? Math.round((rows.length * intervalHours) / 24) : null;
+    // Điểm đo mặn và trạm IoT có lưới thời gian riêng (rows là hợp của cả hai) nên tầm dự báo phải
+    // tính theo số mốc của MỘT trạm, không phải tổng số dòng.
+    const pointsPerStation = payload.points_per_station || rows.length;
+    const horizonDays = intervalHours ? Math.round((pointsPerStation * intervalHours) / 24) : null;
 
-    // Khong co issued_at tuong minh -> dung thoi diem artifact duoc tao lam gia tri gan dung.
-    const issuedAt = payload.artifact?.created_at || null;
+    // Payload hiện không còn artifact.created_at -> lấy thời điểm hệ thống nhận được lượt dự báo
+    // làm thời gian ban hành (bản tin dự báo cần mốc này).
+    const issuedAt = payload.artifact?.created_at || new Date().toISOString();
 
     return {forecastStartAt, intervalHours, horizonDays, issuedAt};
   }

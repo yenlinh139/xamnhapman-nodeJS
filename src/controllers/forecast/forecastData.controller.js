@@ -1,8 +1,25 @@
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
 const forecastSyncService = require("../../services/forecastSyncService");
-const {FORECAST_VALUE_COLUMNS, FORECAST_DAILY_COLUMNS} = require("../../configs/forecastStations");
-const ALL_FORECAST_COLUMNS = [...FORECAST_VALUE_COLUMNS, ...FORECAST_DAILY_COLUMNS];
+const {
+  FORECAST_VALUE_COLUMNS,
+  FORECAST_IOT_COLUMNS,
+  FORECAST_ALL_VALUE_COLUMNS,
+  FORECAST_ALL_DAILY_COLUMNS,
+} = require("../../configs/forecastStations");
+// Mọi cột có thể ghi (điểm đo mặn + trạm IoT, giá trị 2h + theo ngày)
+const ALL_FORECAST_COLUMNS = [...FORECAST_ALL_VALUE_COLUMNS, ...FORECAST_ALL_DAILY_COLUMNS];
+
+// Điểm đo mặn và trạm IoT có lưới thời gian dự báo riêng trong cùng 1 lượt -> trang quản trị xem
+// từng nhóm (?group=iot | mặc định điểm đo mặn): chỉ các cột và các mốc thời gian của nhóm đó.
+const resolveGroup = (group) => {
+  const valueColumns = group === "iot" ? FORECAST_IOT_COLUMNS : FORECAST_VALUE_COLUMNS;
+  const columns = [...valueColumns, ...valueColumns.map((c) => `${c}_Daily`)];
+  return {
+    columns,
+    hasDataCondition: (alias = "") => `(${columns.map((c) => `${alias}"${c}" IS NOT NULL`).join(" OR ")})`,
+  };
+};
 const {toIsoWithOffset, resolveReferenceNow} = require("../../utils/forecastTime");
 
 const FORECAST_TIMEZONE = "Asia/Ho_Chi_Minh";
@@ -61,13 +78,15 @@ const formatValueRow = (row) => ({
 // READ - Danh sách lượt chạy dự báo (mới nhất trước)
 const GetForecastRuns = async (req, reply) => {
   try {
+    const group = resolveGroup(req.query?.group);
     const result = await QueryDatabase(`
-      SELECT r.run_id, r.schema_version, r.issued_at, r.forecast_timezone, r.forecast_start_at,
+      SELECT r.run_id, r.schema_version, r.issued_at, r.forecast_timezone,
+             COALESCE(MIN(v."ThoiDiem"), r.forecast_start_at) AS forecast_start_at,
              r.interval_hours, r.horizon_days, r.station_count, r.is_synthetic, r.fetched_at,
              COUNT(v."ThoiDiem")::int AS value_count,
              MAX(v."ThoiDiem") AS forecast_end_at
       FROM forecast_system.forecast_runs r
-      LEFT JOIN forecast_system.forecast_values v ON v.run_id = r.run_id
+      LEFT JOIN forecast_system.forecast_values v ON v.run_id = r.run_id AND ${group.hasDataCondition("v.")}
       GROUP BY r.run_id
       ORDER BY r.forecast_start_at DESC NULLS LAST
     `);
@@ -105,7 +124,8 @@ const GetForecastValues = async (req, reply) => {
     const limit = Math.min(MAX_PAGE_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 50));
     const offset = (page - 1) * limit;
 
-    const conditions = [];
+    const group = resolveGroup(req.query.group);
+    const conditions = [group.hasDataCondition()];
     const params = [];
 
     if (runId) {
@@ -122,7 +142,7 @@ const GetForecastValues = async (req, reply) => {
     }
 
     const whereCondition = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-    const columnList = ALL_FORECAST_COLUMNS.map((c) => `"${c}"`).join(", ");
+    const columnList = group.columns.map((c) => `"${c}"`).join(", ");
 
     const [result, countResult] = await Promise.all([
       QueryDatabase(

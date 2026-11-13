@@ -29,17 +29,38 @@ const FORECAST_VALUE_COLUMNS = Object.values(FORECAST_STATION_MAP).map((s) => s.
 // Cot luu gia tri DailyForecast (du bao theo ngay) ben canh cot do_man (theo moc 2h)
 const FORECAST_DAILY_COLUMNS = FORECAST_VALUE_COLUMNS.map((c) => `${c}_Daily`);
 
-// Trạm IoT (station_code) dùng tạm dự báo của điểm đo mặn tương ứng - phải khớp với
-// IOT_STATION_FORECAST_MAP ở frontend (components/map/IoTMarkers.jsx).
-const IOT_STATION_FORECAST_MAP = {
-  CAH_IoT: "KXAH",
-  CKC_IoT: "CKC",
+// Dự báo riêng cho trạm IoT (API dự báo trả thêm từ 13/11/2026): "Station" của API -> station_code
+// trong iot_system.iot_stations, cũng là tên cột trong forecast_system.forecast_values. API có lúc
+// trả tên kèm hậu tố "_iot" (KenhC_iot) có lúc không (KenhC) nên so khớp sau khi bỏ hậu tố.
+// Chuỗi dự báo IoT có lưới thời gian RIÊNG, không trùng với lưới của 7 điểm đo mặn.
+const IOT_FORECAST_STATION_MAP = {
+  KenhAnHa: "CAH_IoT",
+  KenhC: "CKC_IoT",
+  KenhVuonThom: "CVT_IoT",
 };
+const FORECAST_IOT_COLUMNS = Object.values(IOT_FORECAST_STATION_MAP);
+// Danh sách trạm IoT có dự báo (cùng dạng với ALL_SALINITY_STATIONS_FORECAST_STATUS) cho trang quản trị
+const IOT_STATIONS_FORECAST_STATUS = [
+  {manualCode: "CKC_IoT", displayName: "Cống Kênh C", hasForecast: true},
+  {manualCode: "CAH_IoT", displayName: "Cống An Hạ", hasForecast: true},
+  {manualCode: "CVT_IoT", displayName: "Cống Vườn Thơm", hasForecast: true},
+];
+const FORECAST_ALL_VALUE_COLUMNS = [...FORECAST_VALUE_COLUMNS, ...FORECAST_IOT_COLUMNS];
+const FORECAST_ALL_DAILY_COLUMNS = FORECAST_ALL_VALUE_COLUMNS.map((c) => `${c}_Daily`);
+
+const resolveForecastColumn = (apiStation) =>
+  FORECAST_STATION_MAP[apiStation]?.manualCode ||
+  IOT_FORECAST_STATION_MAP[String(apiStation || "").replace(/_iot$/i, "")] ||
+  null;
 
 module.exports = {
-  IOT_STATION_FORECAST_MAP,
   FORECAST_STATION_MAP,
   ALL_SALINITY_STATIONS_FORECAST_STATUS,
   FORECAST_VALUE_COLUMNS,
   FORECAST_DAILY_COLUMNS,
+  FORECAST_IOT_COLUMNS,
+  IOT_STATIONS_FORECAST_STATUS,
+  FORECAST_ALL_VALUE_COLUMNS,
+  FORECAST_ALL_DAILY_COLUMNS,
+  resolveForecastColumn,
 };

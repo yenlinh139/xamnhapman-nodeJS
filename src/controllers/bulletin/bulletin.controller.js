@@ -1,7 +1,7 @@
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
 const NodeCache = require("node-cache");
-const {FORECAST_VALUE_COLUMNS, IOT_STATION_FORECAST_MAP} = require("../../configs/forecastStations");
+const {FORECAST_ALL_VALUE_COLUMNS} = require("../../configs/forecastStations");
 const {toIsoWithOffset} = require("../../utils/forecastTime");
 const {normalizeDateExpr} = require("../hydrometeorology/hydrometeorology.controller");
 const {loadAllStations} = require("../administrative/administrativeSummary.controller");
@@ -256,18 +256,21 @@ const buildForecastBulletins = async (stations, context) => {
       [run.run_id],
     );
     const issuedAt = toIsoWithOffset(run.issued_at);
-    const startDay = String(toIsoWithOffset(run.forecast_start_at)).slice(0, 10);
 
     stations.forEach((station) => {
-      const forecastCode = station.type === "iot" ? IOT_STATION_FORECAST_MAP[station.stationCode] : station.code;
-      if (!FORECAST_VALUE_COLUMNS.includes(forecastCode)) return;
+      // Trạm IoT có cột dự báo riêng theo station_code; điểm đo mặn theo mã điểm
+      const forecastCode = station.type === "iot" ? station.stationCode : station.code;
+      if (!FORECAST_ALL_VALUE_COLUMNS.includes(forecastCode)) return;
 
+      // Điểm đo mặn và trạm IoT có lưới thời gian dự báo riêng -> mốc bắt đầu tính theo từng trạm
       let peak = null;
+      let startDay = null;
       values.rows.forEach((row) => {
         const value = toNumber(row[`${forecastCode}_Daily`]) ?? toNumber(row[forecastCode]);
-        if (value !== null && (!peak || value > peak.value)) {
-          peak = {value: round(value), time: toIsoWithOffset(row.ThoiDiem)};
-        }
+        if (value === null) return;
+        const time = toIsoWithOffset(row.ThoiDiem);
+        if (!startDay) startDay = String(time).slice(0, 10);
+        if (!peak || value > peak.value) peak = {value: round(value), time};
       });
       if (!peak) return;
 

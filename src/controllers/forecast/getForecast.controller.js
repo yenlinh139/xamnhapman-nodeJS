@@ -1,12 +1,20 @@
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
-const {ALL_SALINITY_STATIONS_FORECAST_STATUS, FORECAST_VALUE_COLUMNS} = require("../../configs/forecastStations");
+const {
+  ALL_SALINITY_STATIONS_FORECAST_STATUS,
+  FORECAST_VALUE_COLUMNS,
+  FORECAST_IOT_COLUMNS,
+  IOT_STATIONS_FORECAST_STATUS,
+} = require("../../configs/forecastStations");
 // values: do_man (theo moc 2h) - dung ve bieu do; dailyValues: DailyForecast (theo ngay, lap lai trong ngay)
 const {toIsoWithOffset, resolveReferenceNow} = require("../../utils/forecastTime");
 
 // Danh sách trạm + cờ hasForecast, để FE tự biết trạm nào chưa có dữ liệu dự báo
 const GetForecastStations = async (req, reply) => {
-  return reply.code(200).send(ALL_SALINITY_STATIONS_FORECAST_STATUS);
+  // ?group=iot -> các trạm IoT có dự báo; mặc định là điểm đo mặn
+  return reply
+    .code(200)
+    .send(req.query?.group === "iot" ? IOT_STATIONS_FORECAST_STATUS : ALL_SALINITY_STATIONS_FORECAST_STATUS);
 };
 
 /**
@@ -34,11 +42,18 @@ const GetLatestForecast = async (req, reply) => {
       [run.run_id],
     );
 
-    const timeGrid = valuesResult.rows.map((row) => toIsoWithOffset(row.ThoiDiem));
-    const stations = FORECAST_VALUE_COLUMNS.map((manualCode) => ({
+    // ?group=iot -> dự báo của trạm IoT (manualCode = station_code, vd CKC_IoT); mặc định là 7 điểm đo
+    // mặn. Hai nhóm có lưới thời gian riêng nên chỉ lấy các mốc mà nhóm đang hỏi có số liệu.
+    const columns = req.query?.group === "iot" ? FORECAST_IOT_COLUMNS : FORECAST_VALUE_COLUMNS;
+    const groupRows = valuesResult.rows.filter((row) =>
+      columns.some((column) => row[column] !== null || row[`${column}_Daily`] !== null),
+    );
+
+    const timeGrid = groupRows.map((row) => toIsoWithOffset(row.ThoiDiem));
+    const stations = columns.map((manualCode) => ({
       manualCode,
-      values: valuesResult.rows.map((row) => row[manualCode]),
-      dailyValues: valuesResult.rows.map((row) => row[`${manualCode}_Daily`]),
+      values: groupRows.map((row) => row[manualCode]),
+      dailyValues: groupRows.map((row) => row[`${manualCode}_Daily`]),
     }));
 
     // Neu "hien tai" (thuc hoac override) nam TRUOC ca chuoi -> mốc đầu (tự nhiên, findIndex tra ve 0).

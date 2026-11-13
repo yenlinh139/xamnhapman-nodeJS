@@ -1,7 +1,7 @@
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
 const NodeCache = require("node-cache");
-const {FORECAST_VALUE_COLUMNS} = require("../../configs/forecastStations");
+const {FORECAST_VALUE_COLUMNS, FORECAST_IOT_COLUMNS} = require("../../configs/forecastStations");
 const {toIsoWithOffset, resolveReferenceNow} = require("../../utils/forecastTime");
 const {idMapping: KTTV_COLUMN_MAP, normalizeDateExpr} = require("../hydrometeorology/hydrometeorology.controller");
 
@@ -329,8 +329,25 @@ const buildObservedSalinity = async (salinityStations, iotSerials) => {
   return toObservation(slots, {source: "manual", unit: "‰", resolution: "day"});
 };
 
-const buildForecastSalinity = async (salinityStations) => {
-  const columns = salinityStations.filter((station) => station.hasForecast).map((station) => station.code);
+// Dự báo của điểm đo mặn và của trạm IoT có lưới thời gian riêng: tính từng nhóm rồi lấy nhóm có mốc
+// dự báo gần hiện tại nhất
+const buildForecastSalinity = async (salinityStations, iotStations) => {
+  const referenceNow = resolveReferenceNow().getTime();
+  const candidates = await Promise.all([
+    buildForecastForColumns(salinityStations.filter((station) => station.hasForecast).map((station) => station.code)),
+    buildForecastForColumns(
+      iotStations.map((station) => station.stationCode).filter((code) => FORECAST_IOT_COLUMNS.includes(code)),
+    ),
+  ]);
+  return candidates
+    .filter(Boolean)
+    .reduce((best, item) => {
+      const gap = (candidate) => Math.abs(new Date(candidate.time).getTime() - referenceNow);
+      return !best || gap(item) < gap(best) ? item : best;
+    }, null);
+};
+
+const buildForecastForColumns = async (columns) => {
   if (columns.length === 0) return null;
 
   const runResult = await QueryDatabase(
@@ -344,10 +361,13 @@ const buildForecastSalinity = async (salinityStations) => {
   );
   if (valuesResult.rowCount === 0) return null;
 
-  const rows = valuesResult.rows.map((row) => ({
-    time: toIsoWithOffset(row.ThoiDiem),
-    stats: summarize(columns.map((column) => toNumber(row[`${column}_Daily`]) ?? toNumber(row[column]))),
-  }));
+  const rows = valuesResult.rows
+    .map((row) => ({
+      time: toIsoWithOffset(row.ThoiDiem),
+      stats: summarize(columns.map((column) => toNumber(row[`${column}_Daily`]) ?? toNumber(row[column]))),
+    }))
+    .filter((row) => row.stats);
+  if (rows.length === 0) return null;
 
   // Cùng quy ước với GetLatestForecast: mốc đầu tiên >= "hiện tại", nếu chuỗi đã ở quá khứ thì lấy mốc cuối
   const referenceNow = resolveReferenceNow().getTime();
@@ -480,7 +500,7 @@ const GetAdministrativeSummary = async (req, reply) => {
     const iotSerials = iotStations.map((station) => station.code);
 
     const [salinityForecast, salinityObserved, waterLevel, rainfall] = await Promise.all([
-      settle("salinityForecast", buildForecastSalinity(salinityStations)),
+      settle("salinityForecast", buildForecastSalinity(salinityStations, iotStations)),
       settle("salinityObserved", buildObservedSalinity(salinityStations, iotSerials)),
       settle("waterLevel", buildWaterLevel(hydrologyStations, iotSerials)),
       settle("rainfall", buildRainfall([...rainStations, ...meteorologyStations], iotSerials)),
