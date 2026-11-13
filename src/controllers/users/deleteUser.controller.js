@@ -25,6 +25,18 @@ const DeleteUser = async (req, res, next) => {
       return {code: 401, message: "Không thể xóa tài khoản quản trị viên"};
     }
 
+    // feedbacks.user_id la khoa ngoai NOT NULL, khong co ON DELETE -> xoa thang se vo SQL Error
+    // 23503. Chan som + bao admin xu ly y kien truoc, thay vi de loi SQL kho hieu roi xuong.
+    const feedbackCount = await QueryDatabase(`SELECT COUNT(*) AS total FROM feedbacks WHERE user_id='${id}'`);
+    const totalFeedbacks = parseInt(feedbackCount.rows[0]?.total || 0);
+    if (totalFeedbacks > 0) {
+      res.status(409);
+      return {
+        code: 409,
+        message: `Không thể xóa: người dùng này còn ${totalFeedbacks} ý kiến/phản hồi. Vui lòng xử lý (xóa) các ý kiến đó trước khi xóa tài khoản.`,
+      };
+    }
+
     const sql = `
       DELETE FROM "users" WHERE id='${id}';
     `;

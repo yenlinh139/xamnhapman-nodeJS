@@ -12,6 +12,7 @@ const CreateUser = require("../controllers/users/createUser.controller");
 const DeleteUser = require("../controllers/users/deleteUser.controller");
 const {GetUser, GetUserById} = require("../controllers/users/getUser.controller");
 const PutUser = require("../controllers/users/putUser.controller");
+const VerifyUserEmail = require("../controllers/users/verifyUserEmail.controller");
 const VerifyToken = require("../middlewares/verifyToken");
 const GetFeedback = require("../controllers/feedback/getFeedback.controller");
 const CreateFeedback = require("../controllers/feedback/postFeedback.controller");
@@ -103,6 +104,7 @@ const router = (router, opts, next) => {
   router.delete("/user", {onRequest: [VerifyToken]}, DeleteUser);
   router.put("/user", {onRequest: [VerifyToken]}, PutUser);
   router.put("/user/changerole", {onRequest: [VerifyToken]}, ChangeRoleUser);
+  router.put("/user/verify-email", {onRequest: [VerifyToken]}, VerifyUserEmail);
 
   //Feedback
   router.post("/upload/feedback-image", {onRequest: [VerifyToken], preHandler: upload.single("image")}, UploadFeedbackImage);
