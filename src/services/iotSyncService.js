@@ -179,6 +179,21 @@ class IoTSyncService {
       }
     }
 
+    // Đầu dò mặn/nhiệt khi lỗi vẫn trả về 0 với status "Good". Nhiệt độ nước = 0°C là không thể có
+    // ở TP.HCM nên coi là mất tín hiệu: ghi NULL cho nhiệt độ, và nếu độ mặn cùng thời điểm cũng = 0
+    // thì ghi NULL luôn (gán NULL tường minh để ghi đè số 0 đã lưu từ lần đồng bộ trước).
+    for (const group of Object.values(groupedData)) {
+      const sensors = group.sensors;
+      if (sensors.temp_value !== 0) continue;
+
+      sensors.temp_value = null;
+      sensors.temp_status = null;
+      if (sensors.salt_value === 0) {
+        sensors.salt_value = null;
+        sensors.salt_status = null;
+      }
+    }
+
     // Lưu từng group vào database
     for (const dateTime in groupedData) {
       const group = groupedData[dateTime];

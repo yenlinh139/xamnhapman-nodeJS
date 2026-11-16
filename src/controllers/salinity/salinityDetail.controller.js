@@ -77,6 +77,31 @@ const toVNIsoDate = async (thoiDiem) => {
   return result.rows[0]?.d;
 };
 
+// RANG BUOC DUY NHAT (tram + ngay gio): moi tram chi co 1 ban ghi cho 1 thoi diem. Kiem tra o tang
+// ung dung vi du lieu goc da nap san 63 cap (tram, thoi diem) trung nhau voi GIA TRI KHAC NHAU nen
+// chua dat duoc UNIQUE index o DB (xem migration 016). "excludeId" = dong dang sua: neu dong do
+// VON da nam o dung (tram, thoi diem) nay thi khong tinh la trung (van cho sua gia tri cua dong cu).
+const findDuplicateDetail = async (kiHieu, thoiDiem, excludeId = null) => {
+  const result = await QueryDatabase(
+    `
+      SELECT d.id
+      FROM hochiminh."DoManChiTiet" d
+      WHERE d."KiHieu" = $1 AND d."ThoiDiem" = $2::timestamptz
+        AND ($3::int IS NULL OR d.id <> $3::int)
+        AND NOT EXISTS (
+          SELECT 1 FROM hochiminh."DoManChiTiet" o
+          WHERE o.id = $3::int AND o."KiHieu" = $1 AND o."ThoiDiem" = $2::timestamptz
+        )
+      LIMIT 1
+    `,
+    [kiHieu, thoiDiem, excludeId],
+  );
+  return result.rowCount > 0;
+};
+
+const DUPLICATE_DETAIL_MESSAGE =
+  "Điểm đo này đã có bản ghi ở đúng ngày giờ đó. Mỗi điểm đo chỉ có một bản ghi cho mỗi thời điểm - hãy sửa bản ghi hiện có.";
+
 // GET /api/salinity-detail?kihieu=&startDate=&endDate=&page=&limit=
 const GetSalinityDetailList = async (req, reply) => {
   try {
@@ -86,7 +111,8 @@ const GetSalinityDetailList = async (req, reply) => {
       return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
     }
 
-    const limitVal = Math.min(Math.max(parseInt(limit) || 50, 1), 500);
+    // Tran 5000 de trang quan tri xuat Excel/GeoJSON theo lo (bang hien thi van chi lay 20 dong/trang).
+    const limitVal = Math.min(Math.max(parseInt(limit) || 50, 1), 5000);
     const pageVal = Math.max(parseInt(page) || 1, 1);
     const offsetVal = (pageVal - 1) * limitVal;
 
@@ -179,6 +205,9 @@ const CreateSalinityDetail = async (req, reply) => {
     if (!VALID_SALINITY_STATIONS.includes(KiHieu)) {
       return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
     }
+    if (await findDuplicateDetail(KiHieu, ThoiDiem)) {
+      return reply.code(409).send({code: 409, message: DUPLICATE_DETAIL_MESSAGE});
+    }
 
     const result = await QueryDatabase(
       `
@@ -194,6 +223,7 @@ const CreateSalinityDetail = async (req, reply) => {
 
     return reply.code(201).send({code: 201, message: "Thêm bản ghi thành công", data: result.rows[0]});
   } catch (error) {
+    if (error.code === "23505") return reply.code(409).send({code: 409, message: DUPLICATE_DETAIL_MESSAGE});
     logger.error(error);
     return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
   }
@@ -228,6 +258,10 @@ const UpdateSalinityDetail = async (req, reply) => {
     const nextDoDanDien = DoDanDien !== undefined ? DoDanDien : oldRow.DoDanDien;
     const nextDoDuc = DoDuc !== undefined ? DoDuc : oldRow.DoDuc;
 
+    if (await findDuplicateDetail(nextKiHieu, nextThoiDiem, id)) {
+      return reply.code(409).send({code: 409, message: DUPLICATE_DETAIL_MESSAGE});
+    }
+
     const result = await QueryDatabase(
       `
         UPDATE hochiminh."DoManChiTiet"
@@ -249,6 +283,7 @@ const UpdateSalinityDetail = async (req, reply) => {
 
     return reply.code(200).send({code: 200, message: "Cập nhật thành công", data: updated});
   } catch (error) {
+    if (error.code === "23505") return reply.code(409).send({code: 409, message: DUPLICATE_DETAIL_MESSAGE});
     logger.error(error);
     return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
   }

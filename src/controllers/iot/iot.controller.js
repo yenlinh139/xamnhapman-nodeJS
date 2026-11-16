@@ -9,7 +9,7 @@ const VIETNAM_NOW_SQL = "timezone('Asia/Ho_Chi_Minh', CURRENT_TIMESTAMP)";
  *
  * Query params:
  * - page: Page number (default: 1)
- * - limit: Items per page (default: 100, max: 1000)
+ * - limit: Items per page (default: 100, max: 5000 - trang quan tri xuat Excel/GeoJSON theo lo 5000)
  * - serialNumber: Filter by station
  * - startDate: Filter from date (YYYY-MM-DD)
  * - endDate: Filter to date (YYYY-MM-DD)
@@ -22,7 +22,7 @@ const getAllData = async (request, reply) => {
 
     // Validate pagination
     const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(1000, Math.max(1, parseInt(limit)));
+    const limitNum = Math.min(5000, Math.max(1, parseInt(limit)));
     const offset = (pageNum - 1) * limitNum;
 
     // Validate sort
@@ -622,7 +622,10 @@ const createIoTData = async (request, reply) => {
     });
   } catch (error) {
     request.log.error("Error creating IoT data:", error);
-    const message = error.code === "23505" ? "Bản ghi serial_number + date_time đã tồn tại" : "Không thể tạo dữ liệu IoT";
+    const message =
+      error.code === "23505"
+        ? "Trạm này đã có bản ghi ở đúng thời điểm đó - mỗi trạm chỉ có một bản ghi cho mỗi thời điểm"
+        : "Không thể tạo dữ liệu IoT";
     const statusCode = error.code === "23505" ? 409 : 500;
     return reply.code(statusCode).send({success: false, message, error: error.message});
   }
@@ -684,7 +687,10 @@ const updateIoTData = async (request, reply) => {
     });
   } catch (error) {
     request.log.error("Error updating IoT data:", error);
-    const message = error.code === "23505" ? "Bản ghi serial_number + date_time đã tồn tại" : "Không thể cập nhật dữ liệu IoT";
+    const message =
+      error.code === "23505"
+        ? "Trạm này đã có bản ghi khác ở đúng thời điểm đó - mỗi trạm chỉ có một bản ghi cho mỗi thời điểm"
+        : "Không thể cập nhật dữ liệu IoT";
     const statusCode = error.code === "23505" ? 409 : 500;
     return reply.code(statusCode).send({success: false, message, error: error.message});
   }

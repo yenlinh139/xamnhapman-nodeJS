@@ -129,7 +129,7 @@ async function iotRoutes(fastify, options) {
           type: "object",
           properties: {
             page: {type: "integer", default: 1, description: "Page number"},
-            limit: {type: "integer", default: 100, description: "Items per page (max: 1000)"},
+            limit: {type: "integer", default: 100, description: "Items per page (max: 5000)"},
             serialNumber: {type: "string", description: "Filter by station serial number"},
             sensorType: {
               type: "string",

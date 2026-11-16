@@ -273,7 +273,11 @@ const GetLatestReservoirData = async (req, reply) => {
   }
 };
 
+// Goi sau khi trang quan tri them/sua/xoa so lieu ho chua de bieu do/ban do khong doc cache cu.
+const clearReservoirCache = () => cache.flushAll();
+
 module.exports = {
+  clearReservoirCache,
   GetReservoirPoints,
   GetReservoirOverview,
   GetReservoirData,

@@ -47,6 +47,7 @@ const {
   UpdateSalinityDetail,
   DeleteSalinityDetail,
 } = require("../controllers/salinity/salinityDetail.controller");
+const {GetSalinityTimelineTimes, GetSalinityTimelineValues} = require("../controllers/salinity/salinityTimeline.controller");
 const {
   GetSearchAll,
   GetAllDistricts,
@@ -75,6 +76,13 @@ const {
   GetReservoirData,
   GetLatestReservoirData,
 } = require("../controllers/reservoir/reservoir.controller");
+const {
+  GetStationDataStations,
+  GetStationDataList,
+  CreateStationData,
+  UpdateStationData,
+  DeleteStationData,
+} = require("../controllers/stationData/stationData.controller");
 
 // IoT Routes
 const iotRoutes = require("./iotRoutes");
@@ -148,6 +156,10 @@ const router = (router, opts, next) => {
   router.put("/salinity-detail/:id", {onRequest: [VerifyToken]}, UpdateSalinityDetail);
   router.delete("/salinity-detail/:id", {onRequest: [VerifyToken]}, DeleteSalinityDetail);
 
+  // Bang "Thong ke du lieu do man" tren ban do: cac moc thoi gian quan trac + gia tri theo moc
+  router.get("/salinity-timeline/times", GetSalinityTimelineTimes);
+  router.get("/salinity-timeline/values", GetSalinityTimelineValues);
+
   //search
   router.get("/search/:id", GetSearchAll);
   router.get("/search-date/:id", GetSearchDate);
@@ -179,6 +191,13 @@ const router = (router, opts, next) => {
   router.get("/reservoir-overview/:code", GetReservoirOverview);
   router.get("/reservoir-data/:kihieu", GetReservoirData);
   router.get("/reservoir-latest", GetLatestReservoirData);
+
+  // Quan tri du lieu theo tram (so lieu ngay): :layer = rain | meteo | hydro | reservoir
+  router.get("/station-data/:layer/stations", GetStationDataStations);
+  router.get("/station-data/:layer", GetStationDataList);
+  router.post("/station-data/:layer", {onRequest: [VerifyToken]}, CreateStationData);
+  router.put("/station-data/:layer", {onRequest: [VerifyToken]}, UpdateStationData);
+  router.delete("/station-data/:layer", {onRequest: [VerifyToken]}, DeleteStationData);
 
   // IoT Data Routes
   router.register(iotRoutes, {prefix: "/iot"});
