@@ -352,11 +352,16 @@ const SaveBulletinSubscriptions = async (req, reply) => {
     await QueryDatabase(`DELETE FROM public.bulletin_subscriptions WHERE user_email = $1`, [req.user.email]);
     if (entries.length > 0) {
       await QueryDatabase(
-        `INSERT INTO public.bulletin_subscriptions (user_email, target_type, target_code)
-         SELECT $1, t.target_type, t.target_code
-         FROM unnest($2::text[], $3::text[]) AS t(target_type, target_code)
+        `INSERT INTO public.bulletin_subscriptions (user_email, user_name, target_type, target_code)
+         SELECT $1, $2, t.target_type, t.target_code
+         FROM unnest($3::text[], $4::text[]) AS t(target_type, target_code)
          ON CONFLICT DO NOTHING`,
-        [req.user.email, entries.map((entry) => entry.type), entries.map((entry) => entry.code)],
+        [
+          req.user.email,
+          req.user.name || null,
+          entries.map((entry) => entry.type),
+          entries.map((entry) => entry.code),
+        ],
       );
     }
 
