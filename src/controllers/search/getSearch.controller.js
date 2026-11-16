@@ -568,6 +568,8 @@ const GetSearchAll = async (req, reply) => {
         SELECT "Ngày",             'PCL'  FROM hochiminh."DoMan" WHERE "PCL"  IS NOT NULL
         UNION ALL
         SELECT "Ngày",             'KXD2' FROM hochiminh."DoMan" WHERE "KXD2" IS NOT NULL
+        UNION ALL
+        SELECT "Ngày",             'RBL'  FROM hochiminh."DoMan" WHERE "RBL"  IS NOT NULL
       ) unpivoted
       GROUP BY station_code
     `).catch(() => null);

@@ -7,7 +7,7 @@ const {FORECAST_STATION_MAP} = require("../../configs/forecastStations");
 // Cache với TTL 5 phút cho data ít thay đổi
 const cache = new NodeCache({stdTTL: 300, checkperiod: 60});
 
-const VALID_SALINITY_STATIONS = ["CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2"];
+const VALID_SALINITY_STATIONS = ["CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2", "RBL"];
 
 const salinityOverviewMapping = {
   CRT: {manualCode: "CRT", displayName: "Cầu Rạch Tra"},
@@ -18,6 +18,7 @@ const salinityOverviewMapping = {
   MNB: {manualCode: "MNB", displayName: "Mũi Nhà Bè"},
   PCL: {manualCode: "PCL", displayName: "Phà Cát Lái"},
   KXD2: {manualCode: "KXD2", displayName: "Kênh Xáng đứng 2"},
+  RBL: {manualCode: "RBL", displayName: "Rạch Bà Lào"},
   CAH_IoT: {manualCode: "KXAH", displayName: "Cống An Hạ", iotStationCode: "CAH_IoT"},
   CKC_IoT: {manualCode: "CKC", displayName: "Cống Kênh C", iotStationCode: "CKC_IoT"},
   CVT_IoT: {displayName: "Cống Vườn Thơm", iotStationCode: "CVT_IoT"},
@@ -324,7 +325,7 @@ const GetSalinityData = async (req, reply) => {
 
     if (kihieu === "full") {
       query = `
-        SELECT "Ngày", "CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2"
+        SELECT "Ngày", "CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2", "RBL"
         FROM hochiminh."DoMan"
         WHERE 1=1 ${whereClause}
         ORDER BY "Ngày" DESC
@@ -588,7 +589,7 @@ const ExportSalinityObservationsForAI = async (req, reply) => {
 
     const [dataResult, waterQualityResult, stationsResult] = await Promise.all([
       QueryDatabase(
-        `SELECT "Ngày", "CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2"
+        `SELECT "Ngày", "CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2", "RBL"
          FROM hochiminh."DoMan"
          ${whereSql}
          ORDER BY "Ngày" ASC`,

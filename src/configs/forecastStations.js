@@ -23,6 +23,7 @@ const ALL_SALINITY_STATIONS_FORECAST_STATUS = [
   {manualCode: "KXAH", displayName: "Kênh Xáng đứng 1", hasForecast: true},
   {manualCode: "CRT", displayName: "Cầu Rạch Tra", hasForecast: true},
   {manualCode: "KXD2", displayName: "Kênh Xáng đứng 2", hasForecast: false},
+  {manualCode: "RBL", displayName: "Rạch Bà Lào", hasForecast: false},
 ];
 
 const FORECAST_VALUE_COLUMNS = Object.values(FORECAST_STATION_MAP).map((s) => s.manualCode);

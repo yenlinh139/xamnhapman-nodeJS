@@ -18,6 +18,7 @@ const stationMapping = {
   MNB: "Mũi Nhà Bè",
   PCL: "Phà Cát Lái",
   KXD2: "Kênh Xáng đứng 2",
+  RBL: "Rạch Bà Lào",
 };
 
 const stationCodes = Object.keys(stationMapping);

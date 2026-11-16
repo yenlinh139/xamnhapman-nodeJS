@@ -560,7 +560,7 @@ const createIoTData = async (request, reply) => {
       serial_number,
       date_time,
       distance_value = null,
-      distance_unit = "m",
+      distance_unit = "cm",
       distance_status = null,
       daily_rainfall_value = null,
       daily_rainfall_unit = "mm",
