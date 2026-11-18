@@ -356,12 +356,7 @@ const SaveBulletinSubscriptions = async (req, reply) => {
          SELECT $1, $2, t.target_type, t.target_code
          FROM unnest($3::text[], $4::text[]) AS t(target_type, target_code)
          ON CONFLICT DO NOTHING`,
-        [
-          req.user.email,
-          req.user.name || null,
-          entries.map((entry) => entry.type),
-          entries.map((entry) => entry.code),
-        ],
+        [req.user.email, req.user.name || null, entries.map((entry) => entry.type), entries.map((entry) => entry.code)],
       );
     }
 

@@ -48,6 +48,7 @@ const {
   DeleteSalinityDetail,
 } = require("../controllers/salinity/salinityDetail.controller");
 const {GetSalinityTimelineTimes, GetSalinityTimelineValues} = require("../controllers/salinity/salinityTimeline.controller");
+const {GetDistrictLabels, GetCommuneLabels} = require("../controllers/map/mapLabels.controller");
 const {
   GetSearchAll,
   GetAllDistricts,
@@ -159,6 +160,10 @@ const router = (router, opts, next) => {
   // Bang "Thong ke du lieu do man" tren ban do: cac moc thoi gian quan trac + gia tri theo moc
   router.get("/salinity-timeline/times", GetSalinityTimelineTimes);
   router.get("/salinity-timeline/values", GetSalinityTimelineValues);
+
+  // Nhãn huyện/xã trên bản đồ - backend gọi GeoServer nội bộ thay cho FE gọi thẳng qua proxy ngoài
+  router.get("/map/district-labels", GetDistrictLabels);
+  router.get("/map/commune-labels", GetCommuneLabels);
 
   //search
   router.get("/search/:id", GetSearchAll);

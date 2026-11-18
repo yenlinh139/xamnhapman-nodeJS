@@ -3,8 +3,6 @@
 module.exports = {
   name: "020_add_user_name_to_bulletin_subscriptions",
   async up(QueryDatabase) {
-    await QueryDatabase(
-      `ALTER TABLE public.bulletin_subscriptions ADD COLUMN IF NOT EXISTS user_name VARCHAR(255);`,
-    );
+    await QueryDatabase(`ALTER TABLE public.bulletin_subscriptions ADD COLUMN IF NOT EXISTS user_name VARCHAR(255);`);
   },
 };

@@ -44,7 +44,7 @@ const GetSalinityTimelineTimes = async (req, reply) => {
       `),
       QueryDatabase(`SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo" FROM hochiminh."DiemDoMan" ORDER BY "TenDiem" ASC`),
       QueryDatabase(
-        `SELECT station_code, station_name, longitude, latitude FROM iot_system.iot_stations ORDER BY station_name ASC`,
+        `SELECT station_code, station_name, longitude, latitude, serial_number FROM iot_system.iot_stations ORDER BY station_name ASC`,
       ),
     ]);
 
@@ -66,6 +66,7 @@ const GetSalinityTimelineTimes = async (req, reply) => {
           type: "iot",
           longitude: row.longitude,
           latitude: row.latitude,
+          serialNumber: row.serial_number,
         })),
       ],
     };
