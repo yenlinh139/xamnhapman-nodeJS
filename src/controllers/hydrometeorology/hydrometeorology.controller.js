@@ -283,10 +283,14 @@ const GetLatestHydrometeorologyData = async (req, reply) => {
   }
 };
 
+// Goi sau khi them tram moi vao hochiminh."TramKTTV" de danh sach tram tren ban do cap nhat ngay.
+const clearHydrometeorologyStationsCache = () => stationCache.flushAll();
+
 module.exports = {
   GetHydrometeorology,
   GetHydrometeorologyData,
   GetLatestHydrometeorologyData,
   idMapping,
   normalizeDateExpr,
+  clearHydrometeorologyStationsCache,
 };

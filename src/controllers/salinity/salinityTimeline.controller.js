@@ -126,4 +126,48 @@ const GetSalinityTimelineValues = async (req, reply) => {
   }
 };
 
-module.exports = {GetSalinityTimelineTimes, GetSalinityTimelineValues};
+// GET /api/salinity-timeline/latest - gia tri quan trac GAN NHAT cua TUNG diem/tram (moc gio co the
+// khac nhau giua cac diem/tram) - dung cho "Bao cao nhanh do man".
+const GetSalinityTimelineLatest = async (req, reply) => {
+  try {
+    const [manualResult, iotResult] = await Promise.all([
+      QueryDatabase(`
+        SELECT DISTINCT ON ("KiHieu") "KiHieu" AS code,
+               to_char("ThoiDiem" AT TIME ZONE '${VN_TIMEZONE}', 'YYYY-MM-DD HH24:MI') AS time,
+               ROUND("DoMan"::numeric, 3) AS value
+        FROM hochiminh."DoManChiTiet"
+        WHERE "DoMan" IS NOT NULL
+        ORDER BY "KiHieu", "ThoiDiem" DESC
+      `),
+      QueryDatabase(`
+        WITH hours AS (
+          SELECT s.station_code, ${IOT_HOUR_END_SQL} AS hour_end, d.salt_value
+          FROM iot_system.iot_data d
+          JOIN iot_system.iot_stations s ON s.serial_number = d.serial_number
+          WHERE d.salt_value IS NOT NULL
+        ),
+        latest AS (
+          SELECT station_code, MAX(hour_end) AS hour_end FROM hours GROUP BY station_code
+        )
+        SELECT l.station_code AS code,
+               to_char(l.hour_end, 'YYYY-MM-DD HH24:MI') AS time,
+               ROUND(AVG(h.salt_value)::numeric, 3) AS value
+        FROM latest l
+        JOIN hours h ON h.station_code = l.station_code AND h.hour_end = l.hour_end
+        GROUP BY l.station_code, l.hour_end
+      `),
+    ]);
+
+    const toRows = (rows, type) => rows.map((row) => ({code: row.code, type, time: row.time, value: Number(row.value)}));
+
+    return reply.code(200).send({
+      code: 200,
+      data: [...toRows(manualResult.rows, "manual"), ...toRows(iotResult.rows, "iot")],
+    });
+  } catch (error) {
+    logger.error(error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
+module.exports = {GetSalinityTimelineTimes, GetSalinityTimelineValues, GetSalinityTimelineLatest};

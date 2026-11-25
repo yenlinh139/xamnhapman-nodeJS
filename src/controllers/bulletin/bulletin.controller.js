@@ -14,7 +14,6 @@ const TARGET_TYPES = ["salinity", "iot", "huyen"];
 const WARNING_START_DAY = "2024-01-01";
 const FORECAST_ISSUED_AFTER = "2026-09-11";
 const HYDROLOGY_WINDOW_DAYS = 7;
-const NEAREST_IOT_COUNT = 3;
 const MAX_BULLETINS = 500;
 // Trạm thủy văn dùng cho "hiện trạng thủy văn" của điểm đo mặn
 const REFERENCE_HYDRO_STATIONS = [
@@ -43,14 +42,6 @@ const classifyRisk = (value, stationCode) => {
   const isNhaBe = stationCode === "MNB";
   if (value <= 4) return isNhaBe ? {level: 1, label: "Rủi ro cấp 1"} : {level: 2, label: "Rủi ro cấp 2"};
   return isNhaBe ? {level: 2, label: "Rủi ro cấp 2"} : {level: 3, label: "Rủi ro cấp 3"};
-};
-
-const distanceKm = (a, b) => {
-  const toRad = (degree) => (degree * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 6371 * 2 * Math.asin(Math.sqrt(h));
 };
 
 // Điểm đo mặn + trạm IoT kèm huyện chứa nó
@@ -164,7 +155,8 @@ const summarizeWater = (name, unit, items) => {
 };
 
 // Hiện trạng thủy văn 7 ngày tính đến endDay: trạm IoT lấy mực nước của chính nó; điểm đo mặn lấy
-// Phú An, Nhà Bè và 3 trạm IoT gần nhất
+// Phú An, Nhà Bè và TẤT CẢ trạm IoT có số liệu mực nước trong 7 ngày đó (không giới hạn theo
+// khoảng cách gần nhất).
 const buildHydrology = (station, endDay, context) => {
   const days = windowDays(endDay);
   const iotWater = (iotStation) => {
@@ -188,13 +180,15 @@ const buildHydrology = (station, endDay, context) => {
         .map((row) => ({mean: toNumber(row[item.mean]), max: toNumber(row[item.max]), min: toNumber(row[item.min])})),
     ),
   );
-  const nearestIot = context.stations
-    .filter((item) => item.type === "iot")
-    .sort((left, right) => distanceKm(station, left) - distanceKm(station, right))
-    .slice(0, NEAREST_IOT_COUNT)
-    .map(iotWater);
-  return [...reference, ...nearestIot].filter(Boolean);
+  const allIot = context.stations.filter((item) => item.type === "iot").map(iotWater);
+  return [...reference, ...allIot].filter(Boolean);
 };
+
+// Khoảng ngày hiển thị ở đầu mục "Hiện trạng thủy văn" (vd "từ 21/08/2026 đến 28/08/2026")
+const hydrologyWindowOf = (endDay) => ({
+  start: addDays(endDay, -(HYDROLOGY_WINDOW_DAYS - 1)),
+  end: endDay,
+});
 
 const baseBulletin = (type, station, day) => ({
   id: `${type}:${station.type}:${station.code}:${day}`,
@@ -233,6 +227,7 @@ const buildWarningBulletins = (stations, context) =>
         issuedResolution: "day",
         observed: {value: item.value, time: item.day},
         hydrology: buildHydrology(station, item.day, context),
+        hydrologyWindow: hydrologyWindowOf(item.day),
         risk: classifyRisk(item.value, station.code),
       })),
   );
@@ -261,31 +256,37 @@ const buildForecastBulletins = async (stations, context) => {
       const forecastCode = station.type === "iot" ? station.stationCode : station.code;
       if (!FORECAST_ALL_VALUE_COLUMNS.includes(forecastCode)) return;
 
-      // Điểm đo mặn và trạm IoT có lưới thời gian dự báo riêng -> mốc bắt đầu tính theo từng trạm
-      let peak = null;
-      let startDay = null;
+      // Điểm đo mặn và trạm IoT có lưới thời gian dự báo riêng -> mốc bắt đầu tính theo từng trạm.
+      // Giữ lại TẤT CẢ mốc đạt giá trị lớn nhất (không chỉ mốc đầu tiên) để liệt kê đủ trong bản tin.
+      const forecastEntries = [];
       values.rows.forEach((row) => {
         const value = toNumber(row[`${forecastCode}_Daily`]) ?? toNumber(row[forecastCode]);
         if (value === null) return;
-        const time = toIsoWithOffset(row.ThoiDiem);
-        if (!startDay) startDay = String(time).slice(0, 10);
-        if (!peak || value > peak.value) peak = {value: round(value), time};
+        forecastEntries.push({value: round(value), time: toIsoWithOffset(row.ThoiDiem)});
       });
-      if (!peak) return;
+      if (forecastEntries.length === 0) return;
+
+      const startDay = String(forecastEntries[0].time).slice(0, 10);
+      const endDay = String(forecastEntries[forecastEntries.length - 1].time).slice(0, 10);
+      const forecastMax = Math.max(...forecastEntries.map((entry) => entry.value));
+      const forecastPeakTimes = forecastEntries.filter((entry) => entry.value === forecastMax).map((entry) => entry.time);
 
       const windowStart = addDays(startDay, -(HYDROLOGY_WINDOW_DAYS - 1));
-      const recentPeak = observedSeries(station, context)
-        .filter((item) => item.day >= windowStart && item.day <= startDay)
-        .reduce((best, item) => (!best || item.value > best.value ? item : best), null);
+      const recentItems = observedSeries(station, context).filter((item) => item.day >= windowStart && item.day <= startDay);
+      const recentMax = recentItems.length === 0 ? null : Math.max(...recentItems.map((item) => item.value));
+      const recentPeakDays =
+        recentMax === null ? [] : [...new Set(recentItems.filter((item) => item.value === recentMax).map((item) => item.day))];
 
       bulletins.push({
         ...baseBulletin("forecast", station, run.run_id),
         issuedAt,
         issuedResolution: "time",
         hydrology: buildHydrology(station, startDay, context),
-        current: recentPeak ? {value: recentPeak.value, time: recentPeak.day} : null,
-        forecast: peak,
-        risk: classifyRisk(peak.value, station.type === "iot" ? null : station.code),
+        hydrologyWindow: hydrologyWindowOf(startDay),
+        current: recentMax === null ? null : {value: round(recentMax), days: recentPeakDays},
+        forecast: {value: round(forecastMax), times: forecastPeakTimes},
+        forecastWindow: {start: startDay, end: endDay},
+        risk: classifyRisk(forecastMax, station.type === "iot" ? null : station.code),
       });
     });
   }

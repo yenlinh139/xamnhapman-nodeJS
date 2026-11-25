@@ -115,6 +115,44 @@ const GetSalinityPoints = async (req, reply) => {
   }
 };
 
+// POST /api/salinity-points - them 1 DIEM DO MAN MOI (chi thong tin vi tri: ma, ten, toa do).
+// CHUA co cot rieng trong bang rong "DoMan" (dung cho thong ke/du bao/canh bao) nen so lieu do man
+// cua diem nay se duoc nhap tam qua bang hochiminh."SoLieuTramMoi" (xem salinityDetail.controller.js)
+// cho den khi dev chuyen sang cot chinh thuc.
+const CreateSalinityPoint = async (req, reply) => {
+  try {
+    const KiHieu = String(req.body?.KiHieu || "").trim();
+    const TenDiem = String(req.body?.TenDiem || "").trim();
+    const KinhDo = String(req.body?.KinhDo || "").trim();
+    const ViDo = String(req.body?.ViDo || "").trim();
+
+    if (!KiHieu || !TenDiem || !KinhDo || !ViDo) {
+      return reply.code(400).send({code: 400, message: "Thiếu ký hiệu, tên điểm hoặc toạ độ"});
+    }
+
+    const existing = await QueryDatabase(`SELECT 1 FROM hochiminh."DiemDoMan" WHERE "KiHieu" = $1`, [KiHieu]);
+    if (existing.rowCount > 0) {
+      return reply.code(409).send({code: 409, message: `Ký hiệu "${KiHieu}" đã tồn tại`});
+    }
+
+    const result = await QueryDatabase(
+      `INSERT INTO hochiminh."DiemDoMan" ("KiHieu", "TenDiem", "KinhDo", "ViDo")
+       VALUES ($1, $2, $3, $4)
+       RETURNING "KiHieu", "TenDiem", "KinhDo", "ViDo"`,
+      [KiHieu, TenDiem, KinhDo, ViDo],
+    );
+
+    cache.flushAll();
+    return reply.code(201).send({code: 201, message: "Thêm điểm đo mặn thành công", data: result.rows[0]});
+  } catch (error) {
+    if (error.code === "23505") {
+      return reply.code(409).send({code: 409, message: "Ký hiệu đã tồn tại"});
+    }
+    logger.error(error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
 const GetSalinityOverview = async (req, reply) => {
   try {
     const {code} = req.params;
@@ -674,6 +712,7 @@ const ExportSalinityObservationsForAI = async (req, reply) => {
 
 module.exports = {
   GetSalinityPoints,
+  CreateSalinityPoint,
   GetSalinityOverview,
   GetSalinityData,
   GetSalinityDataDetail,

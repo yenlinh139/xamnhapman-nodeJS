@@ -26,6 +26,7 @@ const {
 const {upload} = require("../configs/uploadImage");
 const {
   GetSalinityPoints,
+  CreateSalinityPoint,
   GetSalinityOverview,
   GetSalinityData,
   GetSalinityDataDetail,
@@ -47,7 +48,11 @@ const {
   UpdateSalinityDetail,
   DeleteSalinityDetail,
 } = require("../controllers/salinity/salinityDetail.controller");
-const {GetSalinityTimelineTimes, GetSalinityTimelineValues} = require("../controllers/salinity/salinityTimeline.controller");
+const {
+  GetSalinityTimelineTimes,
+  GetSalinityTimelineValues,
+  GetSalinityTimelineLatest,
+} = require("../controllers/salinity/salinityTimeline.controller");
 const {GetDistrictLabels, GetCommuneLabels} = require("../controllers/map/mapLabels.controller");
 const {
   GetSearchAll,
@@ -83,6 +88,7 @@ const {
   CreateStationData,
   UpdateStationData,
   DeleteStationData,
+  CreateStationMeta,
 } = require("../controllers/stationData/stationData.controller");
 
 // IoT Routes
@@ -134,6 +140,7 @@ const router = (router, opts, next) => {
 
   //salinity
   router.get("/salinity-points", GetSalinityPoints);
+  router.post("/salinity-points", {onRequest: [VerifyToken]}, CreateSalinityPoint);
   router.get("/salinity-overview/:code", GetSalinityOverview);
   router.get("/salinity-data/:kihieu", GetSalinityData);
   router.get("/salinity-data/:kihieu/detail", GetSalinityDataDetail);
@@ -160,6 +167,7 @@ const router = (router, opts, next) => {
   // Bang "Thong ke du lieu do man" tren ban do: cac moc thoi gian quan trac + gia tri theo moc
   router.get("/salinity-timeline/times", GetSalinityTimelineTimes);
   router.get("/salinity-timeline/values", GetSalinityTimelineValues);
+  router.get("/salinity-timeline/latest", GetSalinityTimelineLatest);
 
   // Nhãn huyện/xã trên bản đồ - backend gọi GeoServer nội bộ thay cho FE gọi thẳng qua proxy ngoài
   router.get("/map/district-labels", GetDistrictLabels);
@@ -199,6 +207,7 @@ const router = (router, opts, next) => {
 
   // Quan tri du lieu theo tram (so lieu ngay): :layer = rain | meteo | hydro | reservoir
   router.get("/station-data/:layer/stations", GetStationDataStations);
+  router.post("/station-data/:layer/stations", {onRequest: [VerifyToken]}, CreateStationMeta);
   router.get("/station-data/:layer", GetStationDataList);
   router.post("/station-data/:layer", {onRequest: [VerifyToken]}, CreateStationData);
   router.put("/station-data/:layer", {onRequest: [VerifyToken]}, UpdateStationData);
