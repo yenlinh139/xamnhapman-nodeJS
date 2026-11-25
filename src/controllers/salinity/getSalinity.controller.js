@@ -481,9 +481,17 @@ const GetSalinityData = async (req, reply) => {
       return reply.code(400).send({code: 400, message: "Thiếu ký hiệu điểm đo"});
     }
 
-    // Validate và sanitize tham số
-    if (kihieu !== "full" && !VALID_SALINITY_STATIONS.includes(kihieu)) {
-      return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
+    // "full"/hardcoded -> noi thang ten cot vao SQL (chi an toan voi 1 trong VALID_SALINITY_STATIONS,
+    // khong duoc nhan input tuy y). Diem MOI (khong co cot rieng trong "DoMan") van hop le neu con
+    // trong DiemDoMan - doc qua nhanh rieng ben duoi (DoManChiTiet, tham so hoa, khong noi chuoi).
+    const isHardcoded = kihieu === "full" || VALID_SALINITY_STATIONS.includes(kihieu);
+    if (!isHardcoded) {
+      const existing = await QueryDatabase(`SELECT 1 FROM hochiminh."DiemDoMan" WHERE "KiHieu" = $1 AND "deleted_at" IS NULL`, [
+        kihieu,
+      ]);
+      if (existing.rowCount === 0) {
+        return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
+      }
     }
 
     const limitVal = Math.min(parseInt(limit), 5000); // Max 5000 records
@@ -508,7 +516,7 @@ const GetSalinityData = async (req, reply) => {
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `;
       params.push(limitVal, offsetVal);
-    } else {
+    } else if (isHardcoded) {
       // LEFT JOIN hochiminh."ChiSoNuoc" de kem theo pH/Do dan dien/Do duc cua dung tram nay -
       // bang moi chua co du lieu that nen 3 cot nay hien tra ve NULL, se tu dong co gia tri khi
       // "ChiSoNuoc" duoc nhap lieu (xem migration 009_create_water_quality_table.js).
@@ -521,6 +529,21 @@ const GetSalinityData = async (req, reply) => {
           ON c."Ngày" = d."Ngày" AND c."KiHieu" = ${kiHieuParam}
         WHERE d."${kihieu}" IS NOT NULL ${whereClause.replace(/"Ngày"/g, 'd."Ngày"')}
         ORDER BY d."Ngày" DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `;
+      params.push(limitVal, offsetVal);
+    } else {
+      // Diem MOI: khong co cot rieng trong "DoMan" - gop trung binh/ngay truc tiep tu
+      // hochiminh."DoManChiTiet" (moi lan do thuc te cua diem nay).
+      const kiHieuParam = `$${params.length + 1}`;
+      params.push(kihieu);
+      query = `
+        SELECT TO_CHAR(("ThoiDiem" AT TIME ZONE '${VN_TIMEZONE}')::date, 'YYYY-MM-DD') AS "Ngày",
+               AVG("DoMan") AS "DoMan", AVG("pH") AS "pH", AVG("DoDanDien") AS "DoDanDien", AVG("DoDuc") AS "DoDuc"
+        FROM hochiminh."DoManChiTiet"
+        WHERE "KiHieu" = ${kiHieuParam} ${whereClause.replace(/"Ngày"/g, `("ThoiDiem" AT TIME ZONE '${VN_TIMEZONE}')::date`)}
+        GROUP BY ("ThoiDiem" AT TIME ZONE '${VN_TIMEZONE}')::date
+        ORDER BY "Ngày" DESC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `;
       params.push(limitVal, offsetVal);
@@ -550,8 +573,19 @@ const GetSalinityDataDetail = async (req, reply) => {
     const {kihieu} = req.params;
     const {limit = 1000, offset = 0, startDate, endDate, orderBy = "DESC"} = req.query;
 
-    if (!kihieu || !VALID_SALINITY_STATIONS.includes(kihieu)) {
-      return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
+    // "KiHieu" duoc tham so hoa (khong noi thang vao SQL) nen chap nhan CA diem MOI (chi can con
+    // ton tai trong DiemDoMan, chua xoa mem) - khac GetSalinityData o tren (noi thang ten cot nen
+    // chi duoc phep la 1 trong VALID_SALINITY_STATIONS).
+    if (!kihieu) {
+      return reply.code(400).send({code: 400, message: "Thiếu ký hiệu điểm đo"});
+    }
+    if (!VALID_SALINITY_STATIONS.includes(kihieu)) {
+      const existing = await QueryDatabase(`SELECT 1 FROM hochiminh."DiemDoMan" WHERE "KiHieu" = $1 AND "deleted_at" IS NULL`, [
+        kihieu,
+      ]);
+      if (existing.rowCount === 0) {
+        return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
+      }
     }
 
     const limitVal = Math.min(Math.max(parseInt(limit) || 1000, 1), 20000);

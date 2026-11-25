@@ -779,7 +779,28 @@ const deleteIoTData = async (request, reply) => {
  */
 const getStations = async (request, reply) => {
   try {
-    const {status} = request.query;
+    const {status, basic} = request.query;
+
+    // basic=1: chi lay metadata (ma/ten/toa do), BO QUA 2 LEFT JOIN LATERAL tinh thong ke do man
+    // (quet toan bo iot_data, hang tram nghin dong/tram) - dung cho noi chi can danh sach de
+    // quan ly vi tri (vd tab "Vi tri"), tranh timeout/tai DB khong can thiet.
+    if (basic === "1" || basic === "true") {
+      let basicQuery = `
+        SELECT id, station_code, serial_number, station_name, longitude, latitude,
+               station_type, frequency, time_period, note, status
+        FROM iot_system.iot_stations
+        WHERE deleted_at IS NULL
+      `;
+      const basicParams = [];
+      if (status) {
+        basicParams.push(status);
+        basicQuery += ` AND status = $${basicParams.length}`;
+      }
+      basicQuery += " ORDER BY station_name";
+
+      const basicResult = await queryDatabase(basicQuery, basicParams);
+      return reply.code(200).send({success: true, data: basicResult.rows, count: basicResult.rows.length});
+    }
 
     let query = `
       SELECT 
