@@ -87,6 +87,20 @@ async function iotRoutes(fastify, options) {
     iotController.deleteStation,
   );
 
+  // Hard-delete (xoa han, khong qua xoa mem) 1 tram IoT + toan bo du lieu lien quan - duong dan
+  // rieng, KHONG duoc UI "Xoá" thong thuong goi toi, chi dung khi thuc su can don han.
+  fastify.delete(
+    "/stations/:serialNumber/hard",
+    {
+      onRequest: [VerifyToken],
+      schema: {
+        description: "Hard-delete an IoT station and all its related data permanently",
+        tags: ["IoT Stations"],
+      },
+    },
+    iotController.hardDeleteStation,
+  );
+
   // Get IoT statistics
   fastify.get(
     "/stats",

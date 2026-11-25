@@ -3,9 +3,12 @@ const logger = require("../../loggers/loggers.config");
 const XLSX = require("xlsx");
 const NodeCache = require("node-cache");
 const {FORECAST_STATION_MAP} = require("../../configs/forecastStations");
+const {clearSearchCache} = require("../search/getSearch.controller");
 
 // Cache với TTL 5 phút cho data ít thay đổi
 const cache = new NodeCache({stdTTL: 300, checkperiod: 60});
+
+const VN_TIMEZONE = "Asia/Ho_Chi_Minh";
 
 const VALID_SALINITY_STATIONS = ["CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2", "RBL"];
 
@@ -47,9 +50,9 @@ const GetSalinityPoints = async (req, reply) => {
     if (!result) {
       // Lấy danh sách điểm đo
       const pointsResult = await QueryDatabase(
-        `SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai" AS "MoTa", "TanSuat"
+        `SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai", "PhanLoai" AS "MoTa", "ThoiGian", "TanSuat", "Note"
          FROM hochiminh."DiemDoMan"
-         WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
+         WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL AND "deleted_at" IS NULL
          ORDER BY "TenDiem" ASC`,
       );
 
@@ -60,10 +63,29 @@ const GetSalinityPoints = async (req, reply) => {
          ORDER BY "Ngày" DESC`,
       );
 
+      // Số liệu của điểm MỚI thêm qua "Thêm vị trí" (chưa có cột riêng trong "DoMan" nên vòng lặp
+      // bên dưới luôn không thấy gì cho các điểm này) - gộp riêng, trung bình/ngày, trực tiếp từ
+      // hochiminh."DoManChiTiet" (điểm mới ghi thẳng vào đây, xem salinityDetail.controller.js).
+      const customDataResult = await QueryDatabase(
+        `SELECT "KiHieu", to_char(("ThoiDiem" AT TIME ZONE '${VN_TIMEZONE}')::date, 'YYYY-MM-DD') AS "Ngày",
+                AVG("DoMan") AS value
+         FROM hochiminh."DoManChiTiet"
+         WHERE "DoMan" IS NOT NULL AND NOT ("KiHieu" = ANY($1))
+         GROUP BY "KiHieu", ("ThoiDiem" AT TIME ZONE '${VN_TIMEZONE}')::date
+         ORDER BY "Ngày" DESC`,
+        [VALID_SALINITY_STATIONS],
+      );
+      const customRowsByCode = new Map();
+      customDataResult.rows.forEach((row) => {
+        if (!customRowsByCode.has(row.KiHieu)) customRowsByCode.set(row.KiHieu, []);
+        customRowsByCode.get(row.KiHieu).push(row);
+      });
+
       // Xử lý dữ liệu
       result = pointsResult.rows.map((point) => {
         const pointData = {
           ...point,
+          isCustom: !VALID_SALINITY_STATIONS.includes(point.KiHieu),
           start_date: null,
           end_date: null,
           total_records: 0,
@@ -102,6 +124,24 @@ const GetSalinityPoints = async (req, reply) => {
           }
         }
 
+        // "DoMan" chưa có cột riêng cho điểm này (luôn đúng với điểm MỚI, vì cột chỉ được thêm thủ
+        // công khi dev "chuyển chính thức") -> lấy trực tiếp từ hochiminh."DoManChiTiet" (đã sắp mới
+        // nhất trước) để bản đồ vẫn thấy số liệu vừa nhập, không cần đợi dev xử lý.
+        if (pointData.total_records === 0) {
+          const customRows = customRowsByCode.get(kihieu) || [];
+          pointData.total_records = customRows.length;
+          if (customRows.length > 0) {
+            pointData.end_date = customRows[0].Ngày;
+            pointData.start_date = customRows[customRows.length - 1].Ngày;
+            pointData.latest_value = Number(customRows[0].value);
+            pointData.latest_date = customRows[0].Ngày;
+            if (customRows.length > 1) {
+              pointData.previous_value = Number(customRows[1].value);
+              pointData.previous_date = customRows[1].Ngày;
+            }
+          }
+        }
+
         return pointData;
       });
 
@@ -117,37 +157,135 @@ const GetSalinityPoints = async (req, reply) => {
 
 // POST /api/salinity-points - them 1 DIEM DO MAN MOI (chi thong tin vi tri: ma, ten, toa do).
 // CHUA co cot rieng trong bang rong "DoMan" (dung cho thong ke/du bao/canh bao) nen so lieu do man
-// cua diem nay se duoc nhap tam qua bang hochiminh."SoLieuTramMoi" (xem salinityDetail.controller.js)
-// cho den khi dev chuyen sang cot chinh thuc.
+// cua diem nay duoc ghi thang vao hochiminh."DoManChiTiet" (xem salinityDetail.controller.js) -
+// bang hang dai, "KiHieu" la TEXT thuong nen khong can cot rieng - cho den khi dev chuyen sang cot
+// chinh thuc trong "DoMan" (ALTER TABLE thu cong, xem migration 018_add_rbl_salinity_station.js).
+// Cac truong thuoc tinh ngoai ten/toa do - khong bat buoc.
+const readOptionalText = (value) => {
+  const text = String(value ?? "").trim();
+  return text === "" ? null : text;
+};
+
 const CreateSalinityPoint = async (req, reply) => {
   try {
     const KiHieu = String(req.body?.KiHieu || "").trim();
     const TenDiem = String(req.body?.TenDiem || "").trim();
     const KinhDo = String(req.body?.KinhDo || "").trim();
     const ViDo = String(req.body?.ViDo || "").trim();
+    const PhanLoai = readOptionalText(req.body?.PhanLoai);
+    const ThoiGian = readOptionalText(req.body?.ThoiGian);
+    const TanSuat = readOptionalText(req.body?.TanSuat);
+    const Note = readOptionalText(req.body?.Note);
 
     if (!KiHieu || !TenDiem || !KinhDo || !ViDo) {
       return reply.code(400).send({code: 400, message: "Thiếu ký hiệu, tên điểm hoặc toạ độ"});
     }
 
-    const existing = await QueryDatabase(`SELECT 1 FROM hochiminh."DiemDoMan" WHERE "KiHieu" = $1`, [KiHieu]);
+    const existing = await QueryDatabase(`SELECT 1 FROM hochiminh."DiemDoMan" WHERE "KiHieu" = $1 AND "deleted_at" IS NULL`, [
+      KiHieu,
+    ]);
     if (existing.rowCount > 0) {
       return reply.code(409).send({code: 409, message: `Ký hiệu "${KiHieu}" đã tồn tại`});
     }
 
     const result = await QueryDatabase(
-      `INSERT INTO hochiminh."DiemDoMan" ("KiHieu", "TenDiem", "KinhDo", "ViDo")
-       VALUES ($1, $2, $3, $4)
-       RETURNING "KiHieu", "TenDiem", "KinhDo", "ViDo"`,
-      [KiHieu, TenDiem, KinhDo, ViDo],
+      `INSERT INTO hochiminh."DiemDoMan" ("KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai", "ThoiGian", "TanSuat", "Note")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai", "ThoiGian", "TanSuat", "Note"`,
+      [KiHieu, TenDiem, KinhDo, ViDo, PhanLoai, ThoiGian, TanSuat, Note],
     );
 
     cache.flushAll();
+    clearSearchCache();
     return reply.code(201).send({code: 201, message: "Thêm điểm đo mặn thành công", data: result.rows[0]});
   } catch (error) {
     if (error.code === "23505") {
       return reply.code(409).send({code: 409, message: "Ký hiệu đã tồn tại"});
     }
+    logger.error(error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
+// PUT /api/salinity-points/:code - sua thuoc tinh (ten/toa do/phan loai/thoi gian/tan suat/ghi chu)
+// cua 1 diem do man (ap dung duoc cho ca diem cu lan diem moi - khong doi "KiHieu" nen khong anh
+// huong du bao/phan loai rui ro von chi dua theo ma).
+const UpdateSalinityPoint = async (req, reply) => {
+  try {
+    const code = String(req.params?.code || "").trim();
+    const TenDiem = String(req.body?.TenDiem || "").trim();
+    const KinhDo = String(req.body?.KinhDo || "").trim();
+    const ViDo = String(req.body?.ViDo || "").trim();
+    const PhanLoai = readOptionalText(req.body?.PhanLoai);
+    const ThoiGian = readOptionalText(req.body?.ThoiGian);
+    const TanSuat = readOptionalText(req.body?.TanSuat);
+    const Note = readOptionalText(req.body?.Note);
+    if (!code || !TenDiem || !KinhDo || !ViDo) {
+      return reply.code(400).send({code: 400, message: "Thiếu tên điểm hoặc toạ độ"});
+    }
+
+    const result = await QueryDatabase(
+      `UPDATE hochiminh."DiemDoMan"
+       SET "TenDiem" = $2, "KinhDo" = $3, "ViDo" = $4, "PhanLoai" = $5, "ThoiGian" = $6, "TanSuat" = $7, "Note" = $8,
+           "updated_at" = now(), "updated_by" = $9
+       WHERE "KiHieu" = $1 AND "deleted_at" IS NULL
+       RETURNING "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai", "ThoiGian", "TanSuat", "Note"`,
+      [code, TenDiem, KinhDo, ViDo, PhanLoai, ThoiGian, TanSuat, Note, req.user?.email || null],
+    );
+    if (result.rowCount === 0) {
+      return reply.code(404).send({code: 404, message: "Không tìm thấy điểm đo"});
+    }
+
+    cache.flushAll();
+    clearSearchCache();
+    return reply.code(200).send({code: 200, message: "Cập nhật thành công", data: result.rows[0]});
+  } catch (error) {
+    logger.error(error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
+// DELETE /api/salinity-points/:code - XOA MEM (set deleted_at), khong xoa khoi DB. Ap dung cho MOI
+// diem do man, khong rieng diem moi - diem da xoa se tu dong bien mat khoi moi danh sach/ban do vi
+// cac truy van deu loc "deleted_at IS NULL".
+const DeleteSalinityPoint = async (req, reply) => {
+  try {
+    const code = String(req.params?.code || "").trim();
+
+    const result = await QueryDatabase(
+      `UPDATE hochiminh."DiemDoMan" SET "deleted_at" = now() WHERE "KiHieu" = $1 AND "deleted_at" IS NULL`,
+      [code],
+    );
+    if (result.rowCount === 0) {
+      return reply.code(404).send({code: 404, message: "Không tìm thấy điểm đo"});
+    }
+
+    cache.flushAll();
+    clearSearchCache();
+    return reply.code(200).send({code: 200, message: "Xoá điểm đo thành công"});
+  } catch (error) {
+    logger.error(error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
+// DELETE /api/salinity-points/:code/hard - XOA HAN, tach rieng khoi "Xoá" thong thuong
+// (DeleteSalinityPoint - xoa mem) - chi dung khi thuc su can don han (vd nhap sai ma). "KiHieu"
+// khong co FK tham chieu toi (hochiminh."DoManChiTiet" chi dung TEXT "KiHieu" thuong, khong co
+// constraint) nen xoa an toan, khong vuong loi FK.
+const HardDeleteSalinityPoint = async (req, reply) => {
+  try {
+    const code = String(req.params?.code || "").trim();
+
+    const result = await QueryDatabase(`DELETE FROM hochiminh."DiemDoMan" WHERE "KiHieu" = $1`, [code]);
+    if (result.rowCount === 0) {
+      return reply.code(404).send({code: 404, message: "Không tìm thấy điểm đo"});
+    }
+
+    cache.flushAll();
+    clearSearchCache();
+    return reply.code(200).send({code: 200, message: "Xoá hẳn điểm đo thành công"});
+  } catch (error) {
     logger.error(error);
     return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
   }
@@ -198,7 +336,7 @@ const GetSalinityOverview = async (req, reply) => {
           `
           SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai" AS "MoTa", "TanSuat"
           FROM hochiminh."DiemDoMan"
-          WHERE "KiHieu" = $1
+          WHERE "KiHieu" = $1 AND "deleted_at" IS NULL
           LIMIT 1
           `,
           [mapping.manualCode],
@@ -645,7 +783,7 @@ const ExportSalinityObservationsForAI = async (req, reply) => {
       QueryDatabase(
         `SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo"
          FROM hochiminh."DiemDoMan"
-         WHERE "KiHieu" = ANY($1)`,
+         WHERE "KiHieu" = ANY($1) AND "deleted_at" IS NULL`,
         [VALID_SALINITY_STATIONS],
       ),
     ]);
@@ -710,9 +848,17 @@ const ExportSalinityObservationsForAI = async (req, reply) => {
   }
 };
 
+// Goi sau khi them/sua/xoa so lieu (DoManChiTiet) de "/salinity-points" (ban do) thay
+// latest_value/total_records moi ngay, khong doi het TTL cache (5 phut).
+const clearSalinityPointsCache = () => cache.flushAll();
+
 module.exports = {
   GetSalinityPoints,
   CreateSalinityPoint,
+  UpdateSalinityPoint,
+  DeleteSalinityPoint,
+  HardDeleteSalinityPoint,
+  clearSalinityPointsCache,
   GetSalinityOverview,
   GetSalinityData,
   GetSalinityDataDetail,

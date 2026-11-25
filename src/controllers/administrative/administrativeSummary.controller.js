@@ -89,9 +89,15 @@ const loadAllStations = async () => {
   if (cached) return cached;
 
   const [salinityResult, kttvResult, iotResult, doManColumnsResult] = await Promise.all([
-    QueryDatabase(`SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai" FROM hochiminh."DiemDoMan"`),
-    QueryDatabase(`SELECT "KiHieu", "TenTram", "KinhDo", "ViDo", "PhanLoai", "YeuTo" FROM hochiminh."TramKTTV"`),
-    QueryDatabase(`SELECT serial_number, station_name, station_code, latitude, longitude FROM iot_system.iot_stations`),
+    QueryDatabase(
+      `SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo", "PhanLoai" FROM hochiminh."DiemDoMan" WHERE "deleted_at" IS NULL`,
+    ),
+    QueryDatabase(
+      `SELECT "KiHieu", "TenTram", "KinhDo", "ViDo", "PhanLoai", "YeuTo" FROM hochiminh."TramKTTV" WHERE "deleted_at" IS NULL`,
+    ),
+    QueryDatabase(
+      `SELECT serial_number, station_name, station_code, latitude, longitude FROM iot_system.iot_stations WHERE deleted_at IS NULL`,
+    ),
     QueryDatabase(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'hochiminh' AND table_name = 'DoMan'`),
   ]);
 

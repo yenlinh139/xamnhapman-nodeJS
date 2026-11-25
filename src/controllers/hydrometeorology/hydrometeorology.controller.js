@@ -19,7 +19,7 @@ const GetHydrometeorology = async (req, reply) => {
       const dbResult = await QueryDatabase(`
         SELECT "KiHieu", "KinhDo", "ViDo", "PhanLoai", "TenTram", "YeuTo", "TanSuat"
         FROM hochiminh."TramKTTV"
-        WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
+        WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL AND "deleted_at" IS NULL
         ORDER BY "TenTram" ASC
       `);
 

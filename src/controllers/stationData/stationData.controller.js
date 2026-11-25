@@ -10,22 +10,27 @@
 //
 // RANG BUOC DUY NHAT: moi (tram, ngay) chi co toi da 1 ban ghi. Them moi vao (tram, ngay) da co so
 // lieu -> 409, khong ghi de.
+//
+// TRAM MOI (them qua "Them vi tri"): duoc cap COT THAT ngay luc tao (ALTER TABLE, xem
+// utils/dynamicStationColumns.js) thay vi ghi tam vao 1 bang JSONB rieng - tram moi tu do duoc xu
+// ly y het tram co san (hardcoded trong LAYERS.stations) o moi ham duoi day, qua 1 mapping hop nhat
+// "stations cung (JS) + stations dong (hochiminh."TramMoiCot")".
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
 const {clearReservoirCache} = require("../reservoir/reservoir.controller");
 const {clearHydrometeorologyStationsCache} = require("../hydrometeorology/hydrometeorology.controller");
-const {
-  existsInTable,
-  createCustomRow,
-  updateCustomRow,
-  deleteCustomRow,
-  getCustomRow,
-  countCustomRows,
-} = require("../../utils/customStationData");
+const {clearSearchCache} = require("../search/getSearch.controller");
+const {ensureStationColumns, getDynamicStationMapping, dropStationColumns} = require("../../utils/dynamicStationColumns");
 
 // Cot "Ngày" cua KhiTuong/ThuyVan la TEXT dang M/D/YYYY -> luon doi sang date bang TO_DATE (khong
 // dung ::date vi ket qua phu thuoc DateStyle cua server).
 const TEXT_DATE_EXPR = `TO_DATE("Ngày", 'MM/DD/YYYY')`;
+
+// Truong thuoc tinh ngoai ten/toa do - rong -> NULL thay vi chuoi rong.
+const readOptionalText = (value) => {
+  const text = String(value ?? "").trim();
+  return text === "" ? null : text;
+};
 
 const KHITUONG = {
   table: "KhiTuong",
@@ -118,46 +123,62 @@ const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 const numberFields = (layer) => layer.fields.filter((f) => f.type === "number");
 
+// Kieu cot SQL that khi ALTER TABLE them cot cho 1 tram MOI - khop dung kieu cac cot cung hien co:
+// KhiTuong/ThuyVan luu moi gia tri (ke ca so) duoi dang "character varying"; TongLuongXa luu so
+// dang NUMERIC, van ban (nguon du lieu) dang TEXT.
+const sqlTypeForField = (layer, field) => {
+  if (field.type === "text") return "TEXT";
+  return layer.valueAsText ? "VARCHAR" : "NUMERIC";
+};
+
+// Mapping hop nhat {KiHieu: {fieldKey: columnName}} cua 1 layer - gom stations CUNG (hardcoded
+// trong LAYERS) + stations DONG (tram moi, tra tu hochiminh."TramMoiCot"). Tu day ve sau, moi ham
+// deu di qua mapping nay nen khong con phan biet "tram cu/tram moi" trong luong xu ly.
+const getMergedStations = async (layer, layerKey) => {
+  const dynamic = await getDynamicStationMapping(layerKey);
+  return {...layer.stations, ...dynamic};
+};
+
 // Cac cot SO cua 1 tram - 1 (tram, ngay) duoc coi la "co ban ghi" khi it nhat 1 cot nay khac NULL.
-const stationNumberColumns = (layer, code) =>
+const stationNumberColumns = (layer, code, stationsMap) =>
   numberFields(layer)
-    .map((f) => layer.stations[code][f.key])
+    .map((f) => stationsMap[code][f.key])
     .filter(Boolean);
 
-const stationAllColumns = (layer, code) => layer.fields.map((f) => layer.stations[code][f.key]).filter(Boolean);
+const stationAllColumns = (layer, code, stationsMap) => layer.fields.map((f) => stationsMap[code][f.key]).filter(Boolean);
 
-const hasDataSql = (layer, code) =>
-  stationNumberColumns(layer, code)
+const hasDataSql = (layer, code, stationsMap) =>
+  stationNumberColumns(layer, code, stationsMap)
     .map((col) => `"${col}" IS NOT NULL`)
     .join(" OR ");
 
-const isEmptySql = (layer, code) =>
-  stationNumberColumns(layer, code)
+const isEmptySql = (layer, code, stationsMap) =>
+  stationNumberColumns(layer, code, stationsMap)
     .map((col) => `"${col}" IS NULL`)
     .join(" AND ");
 
-// Tat ca cot SO cua CA BANG (gop moi lop dung chung bang, vd rain + meteo cung nam o KhiTuong) -
-// dung de xoa han dong khi sau khi go 1 tram thi ca dong khong con so lieu nao.
-const tableNumberColumns = (table) => {
-  const cols = new Set();
-  Object.values(LAYERS)
-    .filter((layer) => layer.table === table)
-    .forEach((layer) =>
-      Object.keys(layer.stations).forEach((code) => stationNumberColumns(layer, code).forEach((c) => cols.add(c))),
-    );
-  return [...cols];
+// Tat ca cot DU LIEU cua 1 bang rong (tru "Ngày"/created_at/updated_at) - doc truc tiep tu
+// information_schema de luon dung du voi moi tram (cung + dong), dung de xoa han dong khi sau khi
+// go 1 tram thi ca dong khong con so lieu nao.
+const NON_DATA_COLUMNS = new Set(["Ngày", "created_at", "updated_at"]);
+const tableDataColumns = async (table) => {
+  const result = await QueryDatabase(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'hochiminh' AND table_name = $1`,
+    [table],
+  );
+  return result.rows.map((row) => row.column_name).filter((col) => !NON_DATA_COLUMNS.has(col));
 };
 
 // Bang RONG -> dang DAI: moi tram 1 nhanh SELECT (chi lay ngay tram do co so lieu), UNION ALL.
-const buildLongSql = (layer, codes) =>
+const buildLongSql = (layer, codes, stationsMap) =>
   codes
     .map((code) => {
-      const mapping = layer.stations[code];
+      const mapping = stationsMap[code];
       const cols = layer.fields
         .map((f) => (mapping[f.key] ? `"${mapping[f.key]}"::text AS "${f.key}"` : `NULL::text AS "${f.key}"`))
         .join(", ");
       return `SELECT ${layer.dateExpr} AS d, '${code}'::text AS "KiHieu", ${cols}
-              FROM hochiminh."${layer.table}" WHERE ${hasDataSql(layer, code)}`;
+              FROM hochiminh."${layer.table}" WHERE ${hasDataSql(layer, code, stationsMap)}`;
     })
     .join("\nUNION ALL\n");
 
@@ -175,11 +196,22 @@ const formatRow = (layer, row, nameByCode) => {
   return out;
 };
 
-const getStationMeta = async (layer) => {
-  const codes = Object.keys(layer.stations);
+// Cot thuoc tinh ngoai ten/toa do - "TramKTTV" co them "PhanLoai", "HoChua" thi khong (bang khac cau
+// truc, khong co cot nay).
+const extraMetaColumns = (table) =>
+  table === "HoChua" ? ["YeuTo", "ThoiGian", "TanSuat"] : ["PhanLoai", "YeuTo", "ThoiGian", "TanSuat"];
+
+// Metadata (ten/toa do/thuoc tinh) cua danh sach "codes" cho truoc - dung chung cho ca tram cung
+// lan tram dong, vi ca 2 deu co 1 dong trong bang metadata that (TramKTTV/HoChua).
+const getStationMeta = async (layer, codes) => {
+  if (codes.length === 0) return {};
   const {table, nameCol} = layer.stationMeta;
+  const extraCols = extraMetaColumns(table)
+    .map((col) => `, "${col}"`)
+    .join("");
   const result = await QueryDatabase(
-    `SELECT "KiHieu", "${nameCol}" AS "Ten", "KinhDo", "ViDo" FROM hochiminh."${table}" WHERE "KiHieu" = ANY($1)`,
+    `SELECT "KiHieu", "${nameCol}" AS "Ten", "KinhDo", "ViDo"${extraCols} FROM hochiminh."${table}"
+     WHERE "KiHieu" = ANY($1) AND "deleted_at" IS NULL`,
     [codes],
   );
   const byCode = {};
@@ -187,72 +219,6 @@ const getStationMeta = async (layer) => {
     byCode[row.KiHieu] = row;
   });
   return byCode;
-};
-
-// Tram MOI them qua "Them vi tri" - dung bang hochiminh."SoLieuTramMoi" (xem migration
-// 022_add_custom_station_support.js) thay vi cot rieng trong bang rong vi chua co cot.
-// "TramKTTV" dung chung cho 3 layer (rain/meteo/hydro) nen phai tra qua hochiminh."TramMoiLayer"
-// de biet 1 KiHieu moi thuoc dung layer nao; "HoChua" chi phuc vu rieng layer reservoir nen khong
-// can bang nhan do.
-const isCustomStationCode = async (layer, layerKey, code) => {
-  const {table} = layer.stationMeta;
-  if (table === "HoChua") return existsInTable("HoChua", code);
-  const result = await QueryDatabase(`SELECT 1 FROM hochiminh."TramMoiLayer" WHERE "KiHieu" = $1 AND "Layer" = $2`, [
-    code,
-    layerKey,
-  ]);
-  return result.rowCount > 0;
-};
-
-// Danh sach tram MOI (metadata + khoang ngay co so lieu tam) cua 1 layer.
-const getCustomStations = async (layer, layerKey) => {
-  const {table, nameCol} = layer.stationMeta;
-  const hardcodedCodes = Object.keys(layer.stations);
-
-  const result =
-    table === "HoChua"
-      ? await QueryDatabase(
-          `SELECT "KiHieu", "${nameCol}" AS "Ten", "KinhDo", "ViDo" FROM hochiminh."HoChua"
-           WHERE NOT ("KiHieu" = ANY($1))`,
-          [hardcodedCodes],
-        )
-      : await QueryDatabase(
-          `SELECT t."KiHieu", t."${nameCol}" AS "Ten", t."KinhDo", t."ViDo"
-           FROM hochiminh."TramKTTV" t
-           JOIN hochiminh."TramMoiLayer" l ON l."KiHieu" = t."KiHieu"
-           WHERE l."Layer" = $1`,
-          [layerKey],
-        );
-
-  const ranges = await Promise.all(result.rows.map((row) => countCustomRows({layer: layerKey, kiHieu: row.KiHieu})));
-
-  return result.rows.map((row, index) => ({
-    KiHieu: row.KiHieu,
-    Ten: row.Ten || row.KiHieu,
-    KinhDo: row.KinhDo,
-    ViDo: row.ViDo,
-    fields: layer.fields.map((f) => f.key),
-    minDate: ranges[index]?.min_date || null,
-    maxDate: ranges[index]?.max_date || null,
-    total: parseInt(ranges[index]?.total || 0),
-    isCustom: true,
-  }));
-};
-
-// Nhu buildLongSql nhung doc tu bang tam cua tram MOI (JSONB "Values" -> tung cot nhu tram chinh
-// thuc). Khong loc theo KiHieu o day - bo loc theo tram (neu co) da duoc ap o WHERE ngoai cung.
-const buildCustomLongSql = (layer, layerKey) => {
-  const cols = layer.fields.map((f) => `("Values"->>'${f.key}')::text AS "${f.key}"`).join(", ");
-  return `SELECT ("ThoiDiem" AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS d, "KiHieu", ${cols}
-          FROM hochiminh."SoLieuTramMoi" WHERE "Layer" = '${layerKey}'`;
-};
-
-// Hop nhat bang rong (tram cu) + bang tam (tram moi) thanh dang DAI dung chung cho moi truy van ben
-// duoi - tram moi hien thi y nhu tram cu.
-const buildCombinedLongSql = (layer, layerKey, codes) => {
-  const hardcodedSql = codes.length ? buildLongSql(layer, codes) : null;
-  const customSql = buildCustomLongSql(layer, layerKey);
-  return hardcodedSql ? `${hardcodedSql}\nUNION ALL\n${customSql}` : customSql;
 };
 
 const todayVN = () => new Intl.DateTimeFormat("en-CA", {timeZone: "Asia/Ho_Chi_Minh"}).format(new Date());
@@ -275,13 +241,11 @@ const resolveLayer = (req, reply) => {
 };
 
 // Doc + kiem tra cac gia tri gui len cho 1 tram. Tra ve {values} (chi gom truong DUOC GUI, da chuan
-// hoa) hoac {error}. Truong tram khong ho tro (vd nhiet do o tram chi do mua) bi bo qua. Tram MOI
-// (mapping undefined - chua co cot rieng) duoc nhap bat ky field nao cua layer.
-const readValues = (layer, code, body) => {
-  const mapping = layer.stations[code];
+// hoa) hoac {error}. Truong tram khong ho tro (vd nhiet do o tram chi do mua) bi bo qua.
+const readValues = (mapping, layer, body) => {
   const values = {};
   for (const field of layer.fields) {
-    if ((mapping && !mapping[field.key]) || body[field.key] === undefined) continue;
+    if (!mapping[field.key] || body[field.key] === undefined) continue;
     const raw = body[field.key];
 
     if (field.type === "text") {
@@ -331,33 +295,41 @@ const GetStationDataStations = async (req, reply) => {
     const layer = resolveLayer(req, reply);
     if (!layer) return;
 
-    const codes = Object.keys(layer.stations);
-    const [meta, rangeResult, customStations] = await Promise.all([
-      getStationMeta(layer),
-      QueryDatabase(
-        `SELECT "KiHieu", TO_CHAR(MIN(d), 'YYYY-MM-DD') AS min_date, TO_CHAR(MAX(d), 'YYYY-MM-DD') AS max_date,
-                COUNT(*) AS total
-         FROM (${buildLongSql(layer, codes)}) t GROUP BY "KiHieu"`,
-      ),
-      getCustomStations(layer, req.params.layer),
+    const stationsMap = await getMergedStations(layer, req.params.layer);
+    const codes = Object.keys(stationsMap);
+
+    const [meta, rangeResult] = await Promise.all([
+      getStationMeta(layer, codes),
+      codes.length
+        ? QueryDatabase(
+            `SELECT "KiHieu", TO_CHAR(MIN(d), 'YYYY-MM-DD') AS min_date, TO_CHAR(MAX(d), 'YYYY-MM-DD') AS max_date,
+                    COUNT(*) AS total
+             FROM (${buildLongSql(layer, codes, stationsMap)}) t GROUP BY "KiHieu"`,
+          )
+        : {rows: []},
     ]);
     const rangeByCode = {};
     rangeResult.rows.forEach((row) => {
       rangeByCode[row.KiHieu] = row;
     });
 
+    const extraCols = extraMetaColumns(layer.stationMeta.table);
     const data = codes
+      // Meta da bi xoa mem (khong con trong ket qua getStationMeta) thi an luon, khong hien voi
+      // ten mac dinh = ma tram.
+      .filter((code) => meta[code])
       .map((code) => ({
         KiHieu: code,
         Ten: meta[code]?.Ten || code,
         KinhDo: meta[code]?.KinhDo || null,
         ViDo: meta[code]?.ViDo || null,
-        fields: layer.fields.filter((f) => layer.stations[code][f.key]).map((f) => f.key),
+        ...Object.fromEntries(extraCols.map((col) => [col, meta[code]?.[col] ?? null])),
+        fields: layer.fields.filter((f) => stationsMap[code][f.key]).map((f) => f.key),
         minDate: rangeByCode[code]?.min_date || null,
         maxDate: rangeByCode[code]?.max_date || null,
         total: parseInt(rangeByCode[code]?.total || 0),
+        isCustom: !layer.stations[code],
       }))
-      .concat(customStations)
       .sort((a, b) => a.Ten.localeCompare(b.Ten, "vi"));
 
     return reply.code(200).send({code: 200, data});
@@ -377,9 +349,8 @@ const GetStationDataList = async (req, reply) => {
 
     const {kihieu, startDate, endDate, page = 1, limit = 50, pivot} = req.query;
     const isPivot = pivot === "1" || pivot === "true";
-    const layerKey = req.params.layer;
-    const isHardcodedCode = kihieu ? Boolean(layer.stations[kihieu]) : false;
-    if (kihieu && !isHardcodedCode && !(await isCustomStationCode(layer, layerKey, kihieu))) {
+    const stationsMap = await getMergedStations(layer, req.params.layer);
+    if (kihieu && !stationsMap[kihieu]) {
       return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
     }
     if ((startDate && !isValidIsoDate(startDate)) || (endDate && !isValidIsoDate(endDate))) {
@@ -390,10 +361,7 @@ const GetStationDataList = async (req, reply) => {
     const pageVal = Math.max(parseInt(page) || 1, 1);
     const offsetVal = (pageVal - 1) * limitVal;
 
-    // kihieu la tram cu -> chi can quet dung tram do o bang rong, bo qua bang tam cho nhe; kihieu
-    // la tram moi hoac khong loc (tat ca) -> van can quet bang tam (loc theo tram neu co da nam o
-    // WHERE $ ben duoi, da duoc tham so hoa an toan).
-    const hardcodedCodes = kihieu ? (isHardcodedCode ? [kihieu] : []) : Object.keys(layer.stations);
+    const codes = kihieu ? [kihieu] : Object.keys(stationsMap);
     const where = [];
     const params = [];
     if (kihieu) {
@@ -409,7 +377,9 @@ const GetStationDataList = async (req, reply) => {
       where.push(`d <= $${params.length}::date`);
     }
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    const longSql = buildCombinedLongSql(layer, layerKey, hardcodedCodes);
+    const longSql = codes.length
+      ? buildLongSql(layer, codes, stationsMap)
+      : `SELECT NULL::date AS d, NULL::text AS "KiHieu" WHERE FALSE`;
     const fieldCols = layer.fields.map((f) => `"${f.key}"`).join(", ");
 
     if (isPivot) {
@@ -443,7 +413,7 @@ const GetStationDataList = async (req, reply) => {
       });
     }
 
-    const [dataResult, countResult, meta, customStations] = await Promise.all([
+    const [dataResult, countResult, meta] = await Promise.all([
       QueryDatabase(
         `SELECT TO_CHAR(d, 'YYYY-MM-DD') AS "Ngay", "KiHieu", ${fieldCols}
          FROM (${longSql}) t ${whereSql}
@@ -452,16 +422,12 @@ const GetStationDataList = async (req, reply) => {
         [...params, limitVal, offsetVal],
       ),
       QueryDatabase(`SELECT COUNT(*) AS total FROM (${longSql}) t ${whereSql}`, params),
-      getStationMeta(layer),
-      isHardcodedCode ? [] : getCustomStations(layer, layerKey),
+      getStationMeta(layer, codes),
     ]);
 
     const nameByCode = {};
     Object.keys(meta).forEach((code) => {
       nameByCode[code] = meta[code].Ten;
-    });
-    customStations.forEach((station) => {
-      nameByCode[station.KiHieu] = station.Ten;
     });
     const total = parseInt(countResult.rows[0]?.total || 0);
 
@@ -476,16 +442,14 @@ const GetStationDataList = async (req, reply) => {
   }
 };
 
-// Kiem tra phan chung cua body (tram + ngay) cho POST/PUT. Tra ve them "isHardcoded" de biet ghi
-// vao bang rong chinh thuc hay bang tam cua tram moi.
-const readKey = async (layer, layerKey, body, reply) => {
+// Kiem tra phan chung cua body (tram + ngay) cho POST/PUT.
+const readKey = (stationsMap, body, reply) => {
   const {KiHieu, Ngay} = body || {};
   if (!KiHieu || !Ngay) {
     reply.code(400).send({code: 400, message: "Thiếu trạm hoặc ngày"});
     return null;
   }
-  const isHardcoded = Boolean(layer.stations[KiHieu]);
-  if (!isHardcoded && !(await isCustomStationCode(layer, layerKey, KiHieu))) {
+  if (!stationsMap[KiHieu]) {
     reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
     return null;
   }
@@ -497,22 +461,21 @@ const readKey = async (layer, layerKey, body, reply) => {
     reply.code(400).send({code: 400, message: "Không được nhập ngày trong tương lai"});
     return null;
   }
-  return {KiHieu, Ngay, isHardcoded};
+  return {KiHieu, Ngay};
 };
-
-// Ngay (YYYY-MM-DD, gio VN) -> Date dung lam "ThoiDiem" trong bang tam (00:00 gio VN cua ngay do).
-const dayToVNTimestamp = (isoDay) => new Date(`${isoDay}T00:00:00+07:00`);
 
 // POST /api/station-data/:layer  body: {KiHieu, Ngay: "YYYY-MM-DD", ...gia tri}
 const CreateStationData = async (req, reply) => {
   try {
     const layer = resolveLayer(req, reply);
     if (!layer) return;
-    const key = await readKey(layer, req.params.layer, req.body, reply);
+    const stationsMap = await getMergedStations(layer, req.params.layer);
+    const key = readKey(stationsMap, req.body, reply);
     if (!key) return;
-    const {KiHieu, Ngay, isHardcoded} = key;
+    const {KiHieu, Ngay} = key;
+    const mapping = stationsMap[KiHieu];
 
-    const {values, error} = readValues(layer, KiHieu, req.body);
+    const {values, error} = readValues(mapping, layer, req.body);
     if (error) return reply.code(400).send({code: 400, message: error});
 
     const hasNumber = numberFields(layer).some((f) => values[f.key] !== null && values[f.key] !== undefined);
@@ -522,32 +485,6 @@ const CreateStationData = async (req, reply) => {
     const orderError = checkOrder(layer, values);
     if (orderError) return reply.code(400).send({code: 400, message: orderError});
 
-    // Tram MOI (chua co cot rieng trong bang rong) -> ghi tam vao hochiminh."SoLieuTramMoi".
-    if (!isHardcoded) {
-      try {
-        await createCustomRow({
-          layer: req.params.layer,
-          kiHieu: KiHieu,
-          thoiDiem: dayToVNTimestamp(Ngay),
-          values,
-        });
-        return reply.code(201).send({
-          code: 201,
-          message: "Thêm bản ghi thành công",
-          data: {KiHieu, Ngay, ...values},
-        });
-      } catch (customError) {
-        if (customError.code === "23505") {
-          return reply.code(409).send({
-            code: 409,
-            message: `Đã có dữ liệu của ${layer.label.toLowerCase()} ${KiHieu} ngày ${formatDisplayDate(Ngay)}. Mỗi trạm chỉ có một bản ghi cho mỗi ngày - hãy dùng "Sửa" để cập nhật.`,
-          });
-        }
-        throw customError;
-      }
-    }
-
-    const mapping = layer.stations[KiHieu];
     // Ghi du moi cot cua tram (truong khong gui -> NULL) de ban ghi moi khong "thua huong" gia tri cu.
     const writeFields = layer.fields.filter((f) => mapping[f.key]);
     const writeValues = writeFields.map((f) => toDbValue(layer, f, values[f.key]));
@@ -559,7 +496,7 @@ const CreateStationData = async (req, reply) => {
     const fillExistingRow = () =>
       QueryDatabase(
         `UPDATE hochiminh."${layer.table}" SET ${setSql}${touchSql}
-         WHERE ${layer.dateExpr} = $1::date AND (${isEmptySql(layer, KiHieu)})`,
+         WHERE ${layer.dateExpr} = $1::date AND (${isEmptySql(layer, KiHieu, stationsMap)})`,
         [Ngay, ...writeValues],
       );
 
@@ -605,38 +542,22 @@ const UpdateStationData = async (req, reply) => {
   try {
     const layer = resolveLayer(req, reply);
     if (!layer) return;
-    const key = await readKey(layer, req.params.layer, req.body, reply);
+    const stationsMap = await getMergedStations(layer, req.params.layer);
+    const key = readKey(stationsMap, req.body, reply);
     if (!key) return;
-    const {KiHieu, Ngay, isHardcoded} = key;
+    const {KiHieu, Ngay} = key;
+    const mapping = stationsMap[KiHieu];
 
-    const {values, error} = readValues(layer, KiHieu, req.body);
+    const {values, error} = readValues(mapping, layer, req.body);
     if (error) return reply.code(400).send({code: 400, message: error});
 
-    if (!isHardcoded) {
-      const thoiDiem = dayToVNTimestamp(Ngay);
-      const existingCustom = await getCustomRow({layer: req.params.layer, kiHieu: KiHieu, thoiDiem});
-      if (!existingCustom) return reply.code(404).send({code: 404, message: "Không tìm thấy bản ghi"});
-
-      const finalValues = {...existingCustom.Values, ...values};
-      const hasNumber = numberFields(layer).some((f) => finalValues[f.key] !== null && finalValues[f.key] !== undefined);
-      if (!hasNumber) {
-        return reply.code(400).send({code: 400, message: 'Cần giữ ít nhất một giá trị đo - dùng "Xóa" nếu muốn gỡ bản ghi'});
-      }
-      const orderError = checkOrder(layer, finalValues);
-      if (orderError) return reply.code(400).send({code: 400, message: orderError});
-
-      await updateCustomRow({layer: req.params.layer, kiHieu: KiHieu, thoiDiem, values: finalValues});
-      return reply.code(200).send({code: 200, message: "Cập nhật thành công", data: {KiHieu, Ngay, ...finalValues}});
-    }
-
-    const mapping = layer.stations[KiHieu];
     const selectCols = layer.fields
       .filter((f) => mapping[f.key])
       .map((f) => `"${mapping[f.key]}"::text AS "${f.key}"`)
       .join(", ");
     const existing = await QueryDatabase(
       `SELECT ${selectCols} FROM hochiminh."${layer.table}"
-       WHERE ${layer.dateExpr} = $1::date AND (${hasDataSql(layer, KiHieu)}) LIMIT 1`,
+       WHERE ${layer.dateExpr} = $1::date AND (${hasDataSql(layer, KiHieu, stationsMap)}) LIMIT 1`,
       [Ngay],
     );
     if (existing.rowCount === 0) {
@@ -667,7 +588,7 @@ const UpdateStationData = async (req, reply) => {
     const touchSql = layer.touchUpdatedAt ? `, updated_at = CURRENT_TIMESTAMP` : "";
     await QueryDatabase(
       `UPDATE hochiminh."${layer.table}" SET ${setSql}${touchSql}
-       WHERE ${layer.dateExpr} = $1::date AND (${hasDataSql(layer, KiHieu)})`,
+       WHERE ${layer.dateExpr} = $1::date AND (${hasDataSql(layer, KiHieu, stationsMap)})`,
       [Ngay, ...writeFields.map((f) => toDbValue(layer, f, values[f.key]))],
     );
 
@@ -687,40 +608,29 @@ const DeleteStationData = async (req, reply) => {
     if (!layer) return;
 
     const {kihieu, date} = req.query;
-    const isHardcoded = kihieu ? Boolean(layer.stations[kihieu]) : false;
-    if (!kihieu || (!isHardcoded && !(await isCustomStationCode(layer, req.params.layer, kihieu)))) {
+    const stationsMap = await getMergedStations(layer, req.params.layer);
+    if (!kihieu || !stationsMap[kihieu]) {
       return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
     }
     if (!isValidIsoDate(date)) {
       return reply.code(400).send({code: 400, message: "Ngày không hợp lệ (YYYY-MM-DD)"});
     }
 
-    if (!isHardcoded) {
-      const deleted = await deleteCustomRow({
-        layer: req.params.layer,
-        kiHieu: kihieu,
-        thoiDiem: dayToVNTimestamp(date),
-      });
-      if (!deleted) return reply.code(404).send({code: 404, message: "Không tìm thấy bản ghi"});
-      return reply.code(200).send({code: 200, message: "Xóa bản ghi thành công"});
-    }
-
-    const clearSql = stationAllColumns(layer, kihieu)
+    const clearSql = stationAllColumns(layer, kihieu, stationsMap)
       .map((col) => `"${col}" = NULL`)
       .join(", ");
     const touchSql = layer.touchUpdatedAt ? `, updated_at = CURRENT_TIMESTAMP` : "";
     const cleared = await QueryDatabase(
       `UPDATE hochiminh."${layer.table}" SET ${clearSql}${touchSql}
-       WHERE ${layer.dateExpr} = $1::date AND (${hasDataSql(layer, kihieu)})`,
+       WHERE ${layer.dateExpr} = $1::date AND (${hasDataSql(layer, kihieu, stationsMap)})`,
       [date],
     );
     if (cleared.rowCount === 0) {
       return reply.code(404).send({code: 404, message: "Không tìm thấy bản ghi"});
     }
 
-    const allEmptySql = tableNumberColumns(layer.table)
-      .map((col) => `"${col}" IS NULL`)
-      .join(" AND ");
+    const dataColumns = await tableDataColumns(layer.table);
+    const allEmptySql = dataColumns.map((col) => `"${col}" IS NULL`).join(" AND ");
     await QueryDatabase(`DELETE FROM hochiminh."${layer.table}" WHERE ${layer.dateExpr} = $1::date AND ${allEmptySql}`, [date]);
 
     afterWrite(layer);
@@ -734,8 +644,9 @@ const DeleteStationData = async (req, reply) => {
 // POST /api/station-data/:layer/stations - them 1 VI TRI MOI (chi ten + toa do) cho layer nay.
 // Ghi vao dung bang metadata that (TramKTTV dung chung mua/khi tuong/thuy van, hoac HoChua rieng
 // cho ho chua) nen hien ngay tren ban do (cac API /hydrometeorology-stations, /reservoir-points
-// deu SELECT toan bo bang, khong loc theo danh sach cung). Voi TramKTTV, ghi them 1 dong vao
-// hochiminh."TramMoiLayer" de biet tram nay thuoc dung layer nao (bang dung chung 3 layer).
+// deu SELECT toan bo bang, khong loc theo danh sach cung). Ngay sau do, cap COT THAT cho tram nay
+// trong bang rong (ALTER TABLE) + ghi mapping vao hochiminh."TramMoiCot" - tu day tram duoc doc/ghi
+// y het tram cung (xem getMergedStations).
 const CreateStationMeta = async (req, reply) => {
   try {
     const layer = resolveLayer(req, reply);
@@ -750,39 +661,161 @@ const CreateStationMeta = async (req, reply) => {
     }
 
     const {table, nameCol} = layer.stationMeta;
-    const existing = await QueryDatabase(`SELECT 1 FROM hochiminh."${table}" WHERE "KiHieu" = $1`, [KiHieu]);
+    const extraCols = extraMetaColumns(table);
+    const extraValues = extraCols.map((col) => readOptionalText(req.body?.[col]));
+
+    const existing = await QueryDatabase(`SELECT 1 FROM hochiminh."${table}" WHERE "KiHieu" = $1 AND "deleted_at" IS NULL`, [
+      KiHieu,
+    ]);
     if (existing.rowCount > 0) {
       return reply.code(409).send({code: 409, message: `Ký hiệu "${KiHieu}" đã tồn tại`});
     }
 
+    const cols = [`"KiHieu"`, `"${nameCol}"`, `"KinhDo"`, `"ViDo"`, ...extraCols.map((col) => `"${col}"`)];
+    const placeholders = cols.map((_, i) => `$${i + 1}`);
     try {
-      await QueryDatabase(`INSERT INTO hochiminh."${table}" ("KiHieu", "${nameCol}", "KinhDo", "ViDo") VALUES ($1, $2, $3, $4)`, [
+      await QueryDatabase(`INSERT INTO hochiminh."${table}" (${cols.join(", ")}) VALUES (${placeholders.join(", ")})`, [
         KiHieu,
         Ten,
         KinhDo,
         ViDo,
+        ...extraValues,
       ]);
     } catch (insertError) {
       if (insertError.code === "23505") return reply.code(409).send({code: 409, message: "Ký hiệu đã tồn tại"});
       throw insertError;
     }
 
-    if (table === "TramKTTV") {
-      await QueryDatabase(
-        `INSERT INTO hochiminh."TramMoiLayer" ("KiHieu", "Layer") VALUES ($1, $2)
-         ON CONFLICT ("KiHieu") DO UPDATE SET "Layer" = $2`,
-        [KiHieu, req.params.layer],
-      );
-      clearHydrometeorologyStationsCache();
-    } else if (table === "HoChua") {
-      clearReservoirCache();
+    try {
+      await ensureStationColumns({
+        table: layer.table,
+        layerKey: req.params.layer,
+        code: KiHieu,
+        fields: layer.fields.map((f) => ({key: f.key, sqlType: sqlTypeForField(layer, f)})),
+      });
+    } catch (columnError) {
+      // KiHieu chua ky tu khong hop le de dat ten cot - rollback metadata vua tao de khong de lai
+      // vi tri "mo coi" (co metadata nhung khong co cho nhap so lieu).
+      await QueryDatabase(`DELETE FROM hochiminh."${table}" WHERE "KiHieu" = $1`, [KiHieu]);
+      return reply.code(400).send({code: 400, message: columnError.message});
     }
+
+    if (table === "TramKTTV") clearHydrometeorologyStationsCache();
+    else if (table === "HoChua") clearReservoirCache();
+    clearSearchCache();
 
     return reply.code(201).send({
       code: 201,
       message: "Thêm vị trí thành công",
-      data: {KiHieu, Ten, KinhDo, ViDo},
+      data: {KiHieu, Ten, KinhDo, ViDo, ...Object.fromEntries(extraCols.map((col, i) => [col, extraValues[i]]))},
     });
+  } catch (error) {
+    logger.error(error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
+// PUT /api/station-data/:layer/stations/:code - sua thuoc tinh (ten/toa do/phan loai/yeu to/thoi
+// gian/tan suat) 1 tram (ap dung ca tram cu lan tram moi - khong doi "KiHieu" nen khong anh huong
+// mapping cot cua tram).
+const UpdateStationMeta = async (req, reply) => {
+  try {
+    const layer = resolveLayer(req, reply);
+    if (!layer) return;
+
+    const code = String(req.params?.code || "").trim();
+    const Ten = String(req.body?.Ten || "").trim();
+    const KinhDo = String(req.body?.KinhDo || "").trim();
+    const ViDo = String(req.body?.ViDo || "").trim();
+    if (!code || !Ten || !KinhDo || !ViDo) {
+      return reply.code(400).send({code: 400, message: "Thiếu tên hoặc toạ độ"});
+    }
+
+    const {table, nameCol} = layer.stationMeta;
+    const extraCols = extraMetaColumns(table);
+    const extraValues = extraCols.map((col) => readOptionalText(req.body?.[col]));
+    const setSql = [`"${nameCol}" = $2`, `"KinhDo" = $3`, `"ViDo" = $4`, ...extraCols.map((col, i) => `"${col}" = $${i + 5}`)];
+    const updatedByParam = extraValues.length + 5;
+    const result = await QueryDatabase(
+      `UPDATE hochiminh."${table}" SET ${setSql.join(", ")}, "updated_at" = now(), "updated_by" = $${updatedByParam}
+       WHERE "KiHieu" = $1 AND "deleted_at" IS NULL`,
+      [code, Ten, KinhDo, ViDo, ...extraValues, req.user?.email || null],
+    );
+    if (result.rowCount === 0) {
+      return reply.code(404).send({code: 404, message: "Không tìm thấy vị trí"});
+    }
+
+    if (table === "TramKTTV") clearHydrometeorologyStationsCache();
+    else if (table === "HoChua") clearReservoirCache();
+    clearSearchCache();
+
+    return reply.code(200).send({
+      code: 200,
+      message: "Cập nhật thành công",
+      data: {KiHieu: code, Ten, KinhDo, ViDo, ...Object.fromEntries(extraCols.map((col, i) => [col, extraValues[i]]))},
+    });
+  } catch (error) {
+    logger.error(error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
+// DELETE /api/station-data/:layer/stations/:code - XOA MEM (set deleted_at), ap dung cho MOI vi tri
+// (ca tram co cot cung lan tram cot dong) - khong con rang buoc rieng cho tram cu, vi xoa mem khong
+// dong cham toi cot/du lieu trong bang rong, chi an vi tri khoi cac danh sach/ban do (deu da loc
+// "deleted_at IS NULL"). Cot/mapping dong (TramMoiCot) duoc GIU NGUYEN de khong mat du lieu da nhap -
+// go han cot thuoc pham vi "xoa han" (HardDeleteStationMeta) chu khong phai xoa mem.
+const DeleteStationMeta = async (req, reply) => {
+  try {
+    const layer = resolveLayer(req, reply);
+    if (!layer) return;
+
+    const code = String(req.params?.code || "").trim();
+    const {table} = layer.stationMeta;
+    const result = await QueryDatabase(
+      `UPDATE hochiminh."${table}" SET "deleted_at" = now() WHERE "KiHieu" = $1 AND "deleted_at" IS NULL`,
+      [code],
+    );
+    if (result.rowCount === 0) {
+      return reply.code(404).send({code: 404, message: "Không tìm thấy vị trí"});
+    }
+
+    if (table === "TramKTTV") clearHydrometeorologyStationsCache();
+    else if (table === "HoChua") clearReservoirCache();
+    clearSearchCache();
+
+    return reply.code(200).send({code: 200, message: "Xoá vị trí thành công"});
+  } catch (error) {
+    logger.error(error);
+    return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
+  }
+};
+
+// DELETE /api/station-data/:layer/stations/:code/hard - XOA HAN, tach rieng khoi "Xoá" thong thuong
+// (DeleteStationMeta - xoa mem) - chi dung khi thuc su can don han. "KiHieu" cua TramKTTV/HoChua
+// khong co FK tham chieu toi nen xoa an toan. Neu code la tram MOI (co cot dong trong TramMoiCot) -
+// go luon cac cot that da ALTER TABLE them rieng cho tram nay (dropStationColumns), khong anh huong
+// tram khac; tram co san (hardcoded trong LAYERS.stations) khong co dong nao trong TramMoiCot nen
+// buoc nay khong lam gi (an toan, khong vo tinh xoa cot dung chung).
+const HardDeleteStationMeta = async (req, reply) => {
+  try {
+    const layer = resolveLayer(req, reply);
+    if (!layer) return;
+
+    const code = String(req.params?.code || "").trim();
+    const {table} = layer.stationMeta;
+    const result = await QueryDatabase(`DELETE FROM hochiminh."${table}" WHERE "KiHieu" = $1`, [code]);
+    if (result.rowCount === 0) {
+      return reply.code(404).send({code: 404, message: "Không tìm thấy vị trí"});
+    }
+
+    await dropStationColumns({table: layer.table, layerKey: req.params.layer, code});
+
+    if (table === "TramKTTV") clearHydrometeorologyStationsCache();
+    else if (table === "HoChua") clearReservoirCache();
+    clearSearchCache();
+
+    return reply.code(200).send({code: 200, message: "Xoá hẳn vị trí thành công"});
   } catch (error) {
     logger.error(error);
     return reply.code(500).send({code: 500, message: "Lỗi máy chủ"});
@@ -796,4 +829,7 @@ module.exports = {
   UpdateStationData,
   DeleteStationData,
   CreateStationMeta,
+  UpdateStationMeta,
+  DeleteStationMeta,
+  HardDeleteStationMeta,
 };

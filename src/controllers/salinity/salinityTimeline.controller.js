@@ -42,9 +42,12 @@ const GetSalinityTimelineTimes = async (req, reply) => {
         WHERE t <= ${VIETNAM_NOW_SQL}
         ORDER BY t DESC
       `),
-      QueryDatabase(`SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo" FROM hochiminh."DiemDoMan" ORDER BY "TenDiem" ASC`),
       QueryDatabase(
-        `SELECT station_code, station_name, longitude, latitude, serial_number FROM iot_system.iot_stations ORDER BY station_name ASC`,
+        `SELECT "KiHieu", "TenDiem", "KinhDo", "ViDo" FROM hochiminh."DiemDoMan" WHERE "deleted_at" IS NULL ORDER BY "TenDiem" ASC`,
+      ),
+      QueryDatabase(
+        `SELECT station_code, station_name, longitude, latitude, serial_number FROM iot_system.iot_stations
+         WHERE deleted_at IS NULL ORDER BY station_name ASC`,
       ),
     ]);
 
@@ -137,6 +140,7 @@ const GetSalinityTimelineLatest = async (req, reply) => {
                ROUND("DoMan"::numeric, 3) AS value
         FROM hochiminh."DoManChiTiet"
         WHERE "DoMan" IS NOT NULL
+          AND ("ThoiDiem" AT TIME ZONE '${VN_TIMEZONE}') <= ${VIETNAM_NOW_SQL}
         ORDER BY "KiHieu", "ThoiDiem" DESC
       `),
       QueryDatabase(`
@@ -147,7 +151,8 @@ const GetSalinityTimelineLatest = async (req, reply) => {
           WHERE d.salt_value IS NOT NULL
         ),
         latest AS (
-          SELECT station_code, MAX(hour_end) AS hour_end FROM hours GROUP BY station_code
+          -- Khong lay moc tuong lai (du lieu nhap truoc/loi dong ho thiet bi) lam "gan nhat"
+          SELECT station_code, MAX(hour_end) AS hour_end FROM hours WHERE hour_end <= ${VIETNAM_NOW_SQL} GROUP BY station_code
         )
         SELECT l.station_code AS code,
                to_char(l.hour_end, 'YYYY-MM-DD HH24:MI') AS time,

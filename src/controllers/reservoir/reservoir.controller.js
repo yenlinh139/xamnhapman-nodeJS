@@ -43,7 +43,7 @@ const GetReservoirPoints = async (req, reply) => {
       const dbResult = await QueryDatabase(`
         SELECT "KiHieu", "TenHo", "KinhDo", "ViDo", "YeuTo", "ThoiGian", "TanSuat"
         FROM hochiminh."HoChua"
-        WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
+        WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL AND "deleted_at" IS NULL
         ORDER BY "TenHo" ASC
       `);
 
@@ -88,7 +88,7 @@ const GetReservoirOverview = async (req, reply) => {
       `
         SELECT "KiHieu", "TenHo", "KinhDo", "ViDo", "YeuTo", "ThoiGian", "TanSuat"
         FROM hochiminh."HoChua"
-        WHERE "KiHieu" = $1
+        WHERE "KiHieu" = $1 AND "deleted_at" IS NULL
       `,
       [reservoirCode],
     );
@@ -195,7 +195,7 @@ const GetReservoirData = async (req, reply) => {
         `
           SELECT "KiHieu", "TenHo", "KinhDo", "ViDo", "YeuTo", "ThoiGian", "TanSuat"
           FROM hochiminh."HoChua"
-          WHERE "KiHieu" = $1
+          WHERE "KiHieu" = $1 AND "deleted_at" IS NULL
         `,
         [reservoirCode],
       );

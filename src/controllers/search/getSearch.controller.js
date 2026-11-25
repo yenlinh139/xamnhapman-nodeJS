@@ -168,9 +168,11 @@ const GetSearchAll = async (req, reply) => {
               ) <= timezone('Asia/Ho_Chi_Minh', CURRENT_TIMESTAMP)
           ) latest_slot
         ) salt_stats ON TRUE
-        WHERE s.serial_number = $1
+        WHERE (
+            s.serial_number = $1
            OR ${n("s.station_name")} LIKE $2
            OR ${n("s.station_code")} LIKE $2
+          ) AND s.deleted_at IS NULL
         ORDER BY s.station_name LIMIT $3`,
         [decodedSearchTerm, searchPattern, limitVal],
       ),
@@ -193,7 +195,7 @@ const GetSearchAll = async (req, reply) => {
           "ThoiGian",
           "TanSuat"
         FROM hochiminh."DiemDoMan"
-        WHERE "KiHieu" = $1 OR ${n('"TenDiem"')} LIKE $2
+        WHERE ("KiHieu" = $1 OR ${n('"TenDiem"')} LIKE $2) AND "deleted_at" IS NULL
         ORDER BY "TenDiem" LIMIT $3`,
         [decodedSearchTerm, searchPattern, limitVal],
       ),
@@ -217,7 +219,7 @@ const GetSearchAll = async (req, reply) => {
           "ThoiGian",
           "TanSuat"
         FROM hochiminh."TramKTTV"
-        WHERE "KiHieu" = $1 OR ${n('"TenTram"')} LIKE $2
+        WHERE ("KiHieu" = $1 OR ${n('"TenTram"')} LIKE $2) AND "deleted_at" IS NULL
         ORDER BY "TenTram" LIMIT $3`,
         [decodedSearchTerm, searchPattern, limitVal],
       ),
@@ -240,7 +242,7 @@ const GetSearchAll = async (req, reply) => {
           "ThoiGian",
           "TanSuat"
         FROM hochiminh."HoChua"
-        WHERE "KiHieu" = $1 OR ${n('"TenHo"')} LIKE $2
+        WHERE ("KiHieu" = $1 OR ${n('"TenHo"')} LIKE $2) AND "deleted_at" IS NULL
         ORDER BY "TenHo" LIMIT $3`,
         [decodedSearchTerm, searchPattern, limitVal],
       ),
@@ -1047,14 +1049,14 @@ const GetStationPositionSalinity = async (req, reply) => {
     if (kihieu === "full") {
       query = `
         SELECT * FROM hochiminh."DiemDoMan"
-        WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL
+        WHERE "KinhDo" IS NOT NULL AND "ViDo" IS NOT NULL AND "deleted_at" IS NULL
         ORDER BY "TenDiem" ASC
       `;
       params = [];
     } else {
       query = `
         SELECT * FROM hochiminh."DiemDoMan"
-        WHERE "KiHieu" = $1
+        WHERE "KiHieu" = $1 AND "deleted_at" IS NULL
       `;
       params = [kihieu];
     }
@@ -1119,7 +1121,7 @@ const GetStationPositionHydrometeorology = async (req, reply) => {
 
     const query = `
       SELECT * FROM hochiminh."TramKTTV"
-      WHERE "KiHieu" = $1
+      WHERE "KiHieu" = $1 AND "deleted_at" IS NULL
     `;
 
     const result = await QueryDatabase(query, [kiHieu]);
@@ -1134,6 +1136,10 @@ const GetStationPositionHydrometeorology = async (req, reply) => {
   }
 };
 
+// Goi khi tram/diem bi tao/sua/xoa de tranh search tra ve du lieu cu (vd tram da xoa mem) trong toi
+// da 30 phut cho (TTL cua searchCache).
+const clearSearchCache = () => searchCache.flushAll();
+
 module.exports = {
   GetSearchAll,
   GetAllDistricts,
@@ -1143,4 +1149,5 @@ module.exports = {
   GetSearchDate,
   GetStationPositionSalinity,
   GetStationPositionHydrometeorology,
+  clearSearchCache,
 };

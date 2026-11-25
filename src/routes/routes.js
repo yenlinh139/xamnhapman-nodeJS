@@ -27,6 +27,9 @@ const {upload} = require("../configs/uploadImage");
 const {
   GetSalinityPoints,
   CreateSalinityPoint,
+  UpdateSalinityPoint,
+  DeleteSalinityPoint,
+  HardDeleteSalinityPoint,
   GetSalinityOverview,
   GetSalinityData,
   GetSalinityDataDetail,
@@ -89,6 +92,9 @@ const {
   UpdateStationData,
   DeleteStationData,
   CreateStationMeta,
+  UpdateStationMeta,
+  DeleteStationMeta,
+  HardDeleteStationMeta,
 } = require("../controllers/stationData/stationData.controller");
 
 // IoT Routes
@@ -141,6 +147,10 @@ const router = (router, opts, next) => {
   //salinity
   router.get("/salinity-points", GetSalinityPoints);
   router.post("/salinity-points", {onRequest: [VerifyToken]}, CreateSalinityPoint);
+  router.put("/salinity-points/:code", {onRequest: [VerifyToken]}, UpdateSalinityPoint);
+  router.delete("/salinity-points/:code", {onRequest: [VerifyToken]}, DeleteSalinityPoint);
+  // Xoa han (tach rieng khoi xoa mem o tren) - chi dung khi thuc su can don han.
+  router.delete("/salinity-points/:code/hard", {onRequest: [VerifyToken]}, HardDeleteSalinityPoint);
   router.get("/salinity-overview/:code", GetSalinityOverview);
   router.get("/salinity-data/:kihieu", GetSalinityData);
   router.get("/salinity-data/:kihieu/detail", GetSalinityDataDetail);
@@ -208,6 +218,10 @@ const router = (router, opts, next) => {
   // Quan tri du lieu theo tram (so lieu ngay): :layer = rain | meteo | hydro | reservoir
   router.get("/station-data/:layer/stations", GetStationDataStations);
   router.post("/station-data/:layer/stations", {onRequest: [VerifyToken]}, CreateStationMeta);
+  router.put("/station-data/:layer/stations/:code", {onRequest: [VerifyToken]}, UpdateStationMeta);
+  router.delete("/station-data/:layer/stations/:code", {onRequest: [VerifyToken]}, DeleteStationMeta);
+  // Xoa han (tach rieng khoi xoa mem o tren) - chi dung khi thuc su can don han.
+  router.delete("/station-data/:layer/stations/:code/hard", {onRequest: [VerifyToken]}, HardDeleteStationMeta);
   router.get("/station-data/:layer", GetStationDataList);
   router.post("/station-data/:layer", {onRequest: [VerifyToken]}, CreateStationData);
   router.put("/station-data/:layer", {onRequest: [VerifyToken]}, UpdateStationData);

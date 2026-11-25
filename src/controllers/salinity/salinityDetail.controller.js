@@ -1,42 +1,35 @@
 // CRUD cho hochiminh."DoManChiTiet" (tung lan do thuc te, co ngay+gio) - dung cho trang quan tri
 // "Diem do man" moi (sua truc tiep tung lan do thay vi 1 dong/ngay nhu truoc). Sau moi
 // them/sua/xoa, TU DONG tinh lai gia tri trung binh/ngay o hochiminh."DoMan"/"ChiSoNuoc" (bang
-// dang nuoi bieu do cong khai) de bieu do luon khop voi du lieu chi tiet.
+// dang nuoi bieu do cong khai) de bieu do luon khop voi du lieu chi tiet - CHI khi diem do da co
+// cot rieng trong "DoMan" (xem hasDoManColumn); diem MOI (chua co cot) bo qua buoc nay.
+//
+// "DoManChiTiet"."KiHieu" la TEXT thuong (khong co cot rieng theo tram, khong FK) nen diem MOI
+// them qua "Them vi tri" ghi THANG vao day nhu diem cu - khong can bang tam SoLieuTramMoi nua.
 const QueryDatabase = require("../../utils/queryDatabase");
 const logger = require("../../loggers/loggers.config");
-const {
-  existsInTable,
-  createCustomRow,
-  isCustomRowId,
-  toCustomRowId,
-  fromCustomRowId,
-  getCustomRowById,
-  updateCustomRowById,
-  deleteCustomRowById,
-} = require("../../utils/customStationData");
+const {clearSalinityPointsCache} = require("./getSalinity.controller");
 
 const VALID_SALINITY_STATIONS = ["CRT", "CTT", "COT", "CKC", "KXAH", "MNB", "PCL", "KXD2", "RBL"];
-const CUSTOM_LAYER = "salinity";
 
-// Hop nhat DoManChiTiet (tram cu, co cot chinh thuc) + SoLieuTramMoi (diem do man MOI them qua
-// "Them vi tri", chua co cot rieng trong DoMan/ChiSoNuoc) thanh 1 danh sach duy nhat cho trang quan
-// tri - diem moi hien thi y nhu diem cu, chi khac o cho KHONG tu tinh lai trung binh/ngay.
-const COMBINED_DETAIL_CTE = `
-  WITH combined AS (
-    SELECT id::text AS id, "ThoiDiem", "KiHieu", "DoMan", "pH", "DoDanDien", "DoDuc", false AS "isCustom"
-    FROM hochiminh."DoManChiTiet"
-    UNION ALL
-    SELECT 'custom:' || id::text AS id, "ThoiDiem", "KiHieu",
-           ("Values"->>'DoMan')::double precision AS "DoMan",
-           ("Values"->>'pH')::double precision AS "pH",
-           ("Values"->>'DoDanDien')::double precision AS "DoDanDien",
-           ("Values"->>'DoDuc')::double precision AS "DoDuc",
-           true AS "isCustom"
-    FROM hochiminh."SoLieuTramMoi" WHERE "Layer" = '${CUSTOM_LAYER}'
-  )
-`;
+const existsInTable = async (table, code) => {
+  const result = await QueryDatabase(`SELECT 1 FROM hochiminh."${table}" WHERE "KiHieu" = $1 LIMIT 1`, [code]);
+  return result.rowCount > 0;
+};
 
 const isValidSalinityCode = async (code) => VALID_SALINITY_STATIONS.includes(code) || existsInTable("DiemDoMan", code);
+
+// Diem nay co cot rieng trong "DoMan" chua? (true voi 9 tram chinh thuc trong VALID_SALINITY_STATIONS,
+// hoac diem MOI da duoc dev "chinh thuc hoa" bang ALTER TABLE thu cong, xem migration
+// 018_add_rbl_salinity_station.js) - quyet dinh co goi recomputeDailyAggregate hay khong.
+const hasDoManColumn = async (code) => {
+  if (VALID_SALINITY_STATIONS.includes(code)) return true;
+  const result = await QueryDatabase(
+    `SELECT 1 FROM information_schema.columns WHERE table_schema = 'hochiminh' AND table_name = 'DoMan' AND column_name = $1`,
+    [code],
+  );
+  return result.rowCount > 0;
+};
 
 const avg = (arr) => (arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 
@@ -166,16 +159,15 @@ const GetSalinityDetailList = async (req, reply) => {
     const [dataResult, countResult] = await Promise.all([
       QueryDatabase(
         `
-          ${COMBINED_DETAIL_CTE}
-          SELECT id, "ThoiDiem", "KiHieu", "DoMan", "pH", "DoDanDien", "DoDuc", "isCustom"
-          FROM combined
+          SELECT id::text AS id, "ThoiDiem", "KiHieu", "DoMan", "pH", "DoDanDien", "DoDuc"
+          FROM hochiminh."DoManChiTiet"
           ${whereSql}
           ORDER BY "ThoiDiem" DESC
           LIMIT $${params.length + 1} OFFSET $${params.length + 2}
         `,
         [...params, limitVal, offsetVal],
       ),
-      QueryDatabase(`${COMBINED_DETAIL_CTE} SELECT COUNT(*) AS total FROM combined ${whereSql}`, params),
+      QueryDatabase(`SELECT COUNT(*) AS total FROM hochiminh."DoManChiTiet" ${whereSql}`, params),
     ]);
 
     const total = parseInt(countResult.rows[0]?.total || 0);
@@ -208,9 +200,8 @@ const GetSalinityDetailRange = async (req, reply) => {
     }
 
     const result = await QueryDatabase(
-      `${COMBINED_DETAIL_CTE}
-       SELECT MIN("ThoiDiem") AS min_time, MAX("ThoiDiem") AS max_time, COUNT(*) AS total
-       FROM combined ${isAll ? "" : `WHERE "KiHieu" = $1`}`,
+      `SELECT MIN("ThoiDiem") AS min_time, MAX("ThoiDiem") AS max_time, COUNT(*) AS total
+       FROM hochiminh."DoManChiTiet" ${isAll ? "" : `WHERE "KiHieu" = $1`}`,
       isAll ? [] : [kihieu],
     );
 
@@ -235,38 +226,8 @@ const CreateSalinityDetail = async (req, reply) => {
     if (!ThoiDiem || !KiHieu) {
       return reply.code(400).send({code: 400, message: "Thiếu Thời điểm hoặc ký hiệu điểm đo"});
     }
-    const isHardcoded = VALID_SALINITY_STATIONS.includes(KiHieu);
-    if (!isHardcoded && !(await existsInTable("DiemDoMan", KiHieu))) {
+    if (!(await isValidSalinityCode(KiHieu))) {
       return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
-    }
-
-    // Diem do man MOI (chua co cot rieng trong DoMan/ChiSoNuoc) -> ghi tam, khong tinh lai trung
-    // binh/ngay (recomputeDailyAggregate se loi vi cot "${KiHieu}" chua ton tai o bang DoMan).
-    if (!isHardcoded) {
-      try {
-        const created = await createCustomRow({
-          layer: CUSTOM_LAYER,
-          kiHieu: KiHieu,
-          thoiDiem: new Date(ThoiDiem),
-          values: {DoMan: DoMan ?? null, pH: pH ?? null, DoDanDien: DoDanDien ?? null, DoDuc: DoDuc ?? null},
-        });
-        return reply.code(201).send({
-          code: 201,
-          message: "Thêm bản ghi thành công",
-          data: {
-            id: toCustomRowId(created.id),
-            ThoiDiem: created.ThoiDiem,
-            KiHieu: created.KiHieu,
-            DoMan: created.Values?.DoMan ?? null,
-            pH: created.Values?.pH ?? null,
-            DoDanDien: created.Values?.DoDanDien ?? null,
-            DoDuc: created.Values?.DoDuc ?? null,
-          },
-        });
-      } catch (customError) {
-        if (customError.code === "23505") return reply.code(409).send({code: 409, message: DUPLICATE_DETAIL_MESSAGE});
-        throw customError;
-      }
     }
 
     if (await findDuplicateDetail(KiHieu, ThoiDiem)) {
@@ -282,8 +243,13 @@ const CreateSalinityDetail = async (req, reply) => {
       [ThoiDiem, KiHieu, DoMan ?? null, pH ?? null, DoDanDien ?? null, DoDuc ?? null],
     );
 
-    const isoDate = await toVNIsoDate(ThoiDiem);
-    await recomputeDailyAggregate(KiHieu, isoDate);
+    // Diem MOI (chua co cot rieng trong "DoMan") bo qua buoc nay - recomputeDailyAggregate se loi
+    // vi cot "KiHieu" chua ton tai o bang "DoMan".
+    if (await hasDoManColumn(KiHieu)) {
+      const isoDate = await toVNIsoDate(ThoiDiem);
+      await recomputeDailyAggregate(KiHieu, isoDate);
+    }
+    clearSalinityPointsCache();
 
     return reply.code(201).send({code: 201, message: "Thêm bản ghi thành công", data: result.rows[0]});
   } catch (error) {
@@ -299,39 +265,7 @@ const UpdateSalinityDetail = async (req, reply) => {
     const {id} = req.params;
     const {ThoiDiem, KiHieu, DoMan, pH, DoDanDien, DoDuc} = req.body;
 
-    // Diem do man MOI: ban ghi nam o bang tam, khong co "cot" nen khong tinh lai trung binh/ngay.
-    // Khong cho doi KiHieu qua lai (giong rang buoc UI "khoá KiHieu khi sửa" cho tram cu).
-    if (isCustomRowId(id)) {
-      const existingCustom = await getCustomRowById(fromCustomRowId(id));
-      if (!existingCustom || existingCustom.Layer !== CUSTOM_LAYER) {
-        return reply.code(404).send({code: 404, message: "Không tìm thấy bản ghi"});
-      }
-      const nextThoiDiem = ThoiDiem !== undefined ? new Date(ThoiDiem) : existingCustom.ThoiDiem;
-      const nextValues = {
-        DoMan: DoMan !== undefined ? DoMan : (existingCustom.Values?.DoMan ?? null),
-        pH: pH !== undefined ? pH : (existingCustom.Values?.pH ?? null),
-        DoDanDien: DoDanDien !== undefined ? DoDanDien : (existingCustom.Values?.DoDanDien ?? null),
-        DoDuc: DoDuc !== undefined ? DoDuc : (existingCustom.Values?.DoDuc ?? null),
-      };
-      try {
-        const updated = await updateCustomRowById(fromCustomRowId(id), {thoiDiem: nextThoiDiem, values: nextValues});
-        return reply.code(200).send({
-          code: 200,
-          message: "Cập nhật thành công",
-          data: {
-            id: toCustomRowId(updated.id),
-            ThoiDiem: updated.ThoiDiem,
-            KiHieu: updated.KiHieu,
-            ...nextValues,
-          },
-        });
-      } catch (customError) {
-        if (customError.code === "23505") return reply.code(409).send({code: 409, message: DUPLICATE_DETAIL_MESSAGE});
-        throw customError;
-      }
-    }
-
-    if (KiHieu && !VALID_SALINITY_STATIONS.includes(KiHieu)) {
+    if (KiHieu && !(await isValidSalinityCode(KiHieu))) {
       return reply.code(400).send({code: 400, message: "Ký hiệu không hợp lệ"});
     }
 
@@ -372,10 +306,11 @@ const UpdateSalinityDetail = async (req, reply) => {
     const oldIsoDate = await toVNIsoDate(oldRow.ThoiDiem);
     const newIsoDate = await toVNIsoDate(updated.ThoiDiem);
 
-    await recomputeDailyAggregate(oldRow.KiHieu, oldIsoDate);
+    if (await hasDoManColumn(oldRow.KiHieu)) await recomputeDailyAggregate(oldRow.KiHieu, oldIsoDate);
     if (oldRow.KiHieu !== updated.KiHieu || oldIsoDate !== newIsoDate) {
-      await recomputeDailyAggregate(updated.KiHieu, newIsoDate);
+      if (await hasDoManColumn(updated.KiHieu)) await recomputeDailyAggregate(updated.KiHieu, newIsoDate);
     }
+    clearSalinityPointsCache();
 
     return reply.code(200).send({code: 200, message: "Cập nhật thành công", data: updated});
   } catch (error) {
@@ -390,20 +325,17 @@ const DeleteSalinityDetail = async (req, reply) => {
   try {
     const {id} = req.params;
 
-    if (isCustomRowId(id)) {
-      const deleted = await deleteCustomRowById(fromCustomRowId(id));
-      if (!deleted) return reply.code(404).send({code: 404, message: "Không tìm thấy bản ghi"});
-      return reply.code(200).send({code: 200, message: "Xóa bản ghi thành công"});
-    }
-
     const result = await QueryDatabase(`DELETE FROM hochiminh."DoManChiTiet" WHERE id = $1 RETURNING "ThoiDiem", "KiHieu"`, [id]);
     if (result.rowCount === 0) {
       return reply.code(404).send({code: 404, message: "Không tìm thấy bản ghi"});
     }
 
     const {ThoiDiem, KiHieu} = result.rows[0];
-    const isoDate = await toVNIsoDate(ThoiDiem);
-    await recomputeDailyAggregate(KiHieu, isoDate);
+    if (await hasDoManColumn(KiHieu)) {
+      const isoDate = await toVNIsoDate(ThoiDiem);
+      await recomputeDailyAggregate(KiHieu, isoDate);
+    }
+    clearSalinityPointsCache();
 
     return reply.code(200).send({code: 200, message: "Xóa bản ghi thành công"});
   } catch (error) {

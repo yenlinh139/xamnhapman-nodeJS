@@ -1,5 +1,6 @@
 const queryDatabase = require("../../utils/queryDatabase");
 const iotSyncService = require("../../services/iotSyncService");
+const {clearSearchCache} = require("../search/getSearch.controller");
 
 const VIETNAM_NOW_SQL = "timezone('Asia/Ho_Chi_Minh', CURRENT_TIMESTAMP)";
 
@@ -155,8 +156,8 @@ const getDataByStation = async (request, reply) => {
         "longitude", 
         "station_code",
         status 
-      FROM iot_system.iot_stations 
-      WHERE serial_number = $1
+      FROM iot_system.iot_stations
+      WHERE serial_number = $1 AND deleted_at IS NULL
     `;
     const stationResult = await queryDatabase(stationQuery, [serialNumber]);
 
@@ -405,7 +406,7 @@ const getStationBySerial = async (request, reply) => {
         FROM iot_system.iot_data d
         WHERE d.serial_number = s.serial_number
       ) iot_counts ON TRUE
-      WHERE s.serial_number = $1 OR s.station_code = $1
+      WHERE (s.serial_number = $1 OR s.station_code = $1) AND s.deleted_at IS NULL
       LIMIT 1
     `;
 
@@ -455,6 +456,7 @@ const createStation = async (request, reply) => {
       [station_code, serial_number, station_name, longitude, latitude, station_type, frequency, time_period, note, status],
     );
 
+    clearSearchCache();
     return reply.code(201).send({
       success: true,
       message: "Tạo trạm IoT thành công",
@@ -498,12 +500,14 @@ const updateStation = async (request, reply) => {
       return reply.code(400).send({success: false, message: "Không có dữ liệu để cập nhật"});
     }
 
+    params.push(request.user?.email || null);
+    const updatedByParam = params.length;
     params.push(serialNumber);
     const result = await queryDatabase(
       `
       UPDATE iot_system.iot_stations
-      SET ${updates.join(", ")}, updated_at = CURRENT_TIMESTAMP
-      WHERE serial_number = $${params.length} OR station_code = $${params.length}
+      SET ${updates.join(", ")}, updated_at = CURRENT_TIMESTAMP, updated_by = $${updatedByParam}
+      WHERE (serial_number = $${params.length} OR station_code = $${params.length}) AND deleted_at IS NULL
       RETURNING *
       `,
       params,
@@ -513,6 +517,7 @@ const updateStation = async (request, reply) => {
       return reply.code(404).send({success: false, message: `Không tìm thấy trạm ${serialNumber}`});
     }
 
+    clearSearchCache();
     return reply.code(200).send({
       success: true,
       message: "Cập nhật trạm IoT thành công",
@@ -526,23 +531,28 @@ const updateStation = async (request, reply) => {
   }
 };
 
+// XOA MEM (chi set deleted_at) - nut "Xoá" thong thuong tren UI dung endpoint nay, khong con phan
+// biet tram "chinh thuc" hay khong. Tram da xoa bien mat khoi getStations/getStationBySerial/
+// getDataByStation (deu da loc deleted_at IS NULL) nhung du lieu iot_data van giu nguyen.
 const deleteStation = async (request, reply) => {
   try {
     const {serialNumber} = request.params;
 
     const result = await queryDatabase(
       `
-      DELETE FROM iot_system.iot_stations
-      WHERE serial_number = $1 OR station_code = $1
+      UPDATE iot_system.iot_stations
+      SET deleted_at = now(), updated_at = CURRENT_TIMESTAMP, updated_by = $2
+      WHERE (serial_number = $1 OR station_code = $1) AND deleted_at IS NULL
       RETURNING id, station_code, serial_number, station_name
       `,
-      [serialNumber],
+      [serialNumber, request.user?.email || null],
     );
 
     if (result.rows.length === 0) {
       return reply.code(404).send({success: false, message: `Không tìm thấy trạm ${serialNumber}`});
     }
 
+    clearSearchCache();
     return reply.code(200).send({
       success: true,
       message: "Xóa trạm IoT thành công",
@@ -551,6 +561,47 @@ const deleteStation = async (request, reply) => {
   } catch (error) {
     request.log.error("Error deleting IoT station:", error);
     return reply.code(500).send({success: false, message: "Không thể xóa trạm IoT", error: error.message});
+  }
+};
+
+// XOA HAN - tach rieng khoi "Xoá" thong thuong (deleteStation), chi goi khi thuc su can don han du
+// lieu (vd nhap sai tram). Xoa kem iot_data lien quan de khong vuong FK truoc khi xoa tram, trong 1
+// transaction (dung query truc tiep qua getPool thay vi queryDatabase vi can BEGIN/COMMIT).
+const hardDeleteStation = async (request, reply) => {
+  const db = require("../../connection/database.connection");
+  const client = await db.connect();
+  try {
+    const {serialNumber} = request.params;
+
+    await client.query("BEGIN");
+
+    const stationResult = await client.query(
+      `SELECT id, station_code, serial_number, station_name FROM iot_system.iot_stations WHERE serial_number = $1 OR station_code = $1`,
+      [serialNumber],
+    );
+    if (stationResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return reply.code(404).send({success: false, message: `Không tìm thấy trạm ${serialNumber}`});
+    }
+    const station = stationResult.rows[0];
+
+    await client.query(`DELETE FROM iot_system.iot_data WHERE serial_number = $1`, [station.serial_number]);
+    await client.query(`DELETE FROM iot_system.iot_stations WHERE serial_number = $1`, [station.serial_number]);
+
+    await client.query("COMMIT");
+
+    clearSearchCache();
+    return reply.code(200).send({
+      success: true,
+      message: "Xoá hẳn trạm IoT và toàn bộ dữ liệu liên quan thành công",
+      data: station,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    request.log.error("Error hard-deleting IoT station:", error);
+    return reply.code(500).send({success: false, message: "Không thể xoá hẳn trạm IoT", error: error.message});
+  } finally {
+    client.release();
   }
 };
 
@@ -830,9 +881,10 @@ const getStations = async (request, reply) => {
     `;
     const params = [];
 
+    query += " WHERE s.deleted_at IS NULL";
     if (status) {
-      query += " WHERE s.status = $1";
       params.push(status);
+      query += ` AND s.status = $${params.length}`;
     }
 
     query += " ORDER BY s.serial_number";
@@ -1103,6 +1155,7 @@ module.exports = {
   createStation,
   updateStation,
   deleteStation,
+  hardDeleteStation,
   getSyncLogs,
   getStats,
   getHealthCheck,
